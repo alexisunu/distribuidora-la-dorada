@@ -1,0 +1,34 @@
+/* Tokens de marca · Distribuidora La Dorada S.A.S
+   Claro por defecto. Oscuro con el sistema o con data-theme="dark".
+   El logo no usa estos tokens: sus colores son fijos. */
+:root {
+  --bg: #F4F9FB; --surface: #FFFFFF; --line: #D5E5EB; --ink: #0F2F3A; --muted: #4A6571;
+  --primary: #0A6C8A; --on-primary: #FFFFFF; --primary-soft: #DCF0F6; --deep: #073E52;
+  --menta-fill: #2FBFA3; --menta: #09705F; --menta-bg: #D8F2EA;
+  --citrico-fill: #F4B71F; --citrico: #7A5200; --citrico-bg: #FFF0C8;
+  --fram-fill: #E0536F; --fram: #B3243F; --fram-bg: #FCE2E8;
+  --neu: #4A6571; --neu-bg: #E4EDF0;
+  --r-s: 6px; --r-m: 12px; --r-l: 20px;
+  --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #08171C; --surface: #0F2730; --line: #1F4250; --ink: #E4F1F5; --muted: #9BB6C0;
+    --primary: #4FC3E3; --on-primary: #04222C; --primary-soft: #123E4C; --deep: #C4ECF8;
+    --menta-fill: #2FBFA3; --menta: #6FDCC3; --menta-bg: #0E3B33;
+    --citrico-fill: #F4B71F; --citrico: #F5C65A; --citrico-bg: #3B2D08;
+    --fram-fill: #E0536F; --fram: #FF93A8; --fram-bg: #43131F;
+    --neu: #9BB6C0; --neu-bg: #1A333C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #08171C; --surface: #0F2730; --line: #1F4250; --ink: #E4F1F5; --muted: #9BB6C0;
+  --primary: #4FC3E3; --on-primary: #04222C; --primary-soft: #123E4C; --deep: #C4ECF8;
+  --menta-fill: #2FBFA3; --menta: #6FDCC3; --menta-bg: #0E3B33;
+  --citrico-fill: #F4B71F; --citrico: #F5C65A; --citrico-bg: #3B2D08;
+  --fram-fill: #E0536F; --fram: #FF93A8; --fram-bg: #43131F;
+  --neu: #9BB6C0; --neu-bg: #1A333C;
+  color-scheme: dark;
+}

@@ -1,0 +1,15 @@
+# Secretos y configuración local (nunca se suben)
+.env
+.env.*
+!.env.example
+application-local.properties
+application-local.yml
+
+# Registros y archivos del sistema
+*.log
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+*.iml
