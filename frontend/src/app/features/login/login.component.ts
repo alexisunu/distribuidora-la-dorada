@@ -12,7 +12,7 @@ import { AuthService } from '../../core/auth/auth.service';
         <!-- Panel Izquierdo de Marca (Escritorio y Banner Móvil) -->
         <section class="hero-panel">
           <div class="hero-brand">
-            <span class="ld-badge">LD</span>
+            <img src="assets/logo/logo.png" alt="Distribuidora La Dorada S.A.S" class="ld-logo">
             <div class="hero-brand-text">
               <strong>Distribuidora</strong>
               <span>La Dorada S.A.S</span>

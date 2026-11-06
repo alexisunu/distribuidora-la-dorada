@@ -10,7 +10,7 @@ import { AuthService } from '../core/auth/auth.service';
     <!-- Sidebar Escritorio -->
     <aside class="sidebar only-desktop">
       <div class="brand">
-        <span class="ld-badge">LD</span>
+        <img src="assets/logo/logo.png" alt="Distribuidora La Dorada S.A.S" class="ld-logo">
         <div class="brand-text">
           <strong>Distribuidora La Dorada</strong>
           <span>S.A.S</span>
@@ -68,7 +68,7 @@ import { AuthService } from '../core/auth/auth.service';
     <header class="mobile-topbar only-mobile">
       <div class="mobile-top-inner">
         <div class="mobile-brand">
-          <span class="ld-badge">LD</span>
+          <img src="assets/logo/logo.png" alt="Distribuidora La Dorada S.A.S" class="ld-logo">
           <div>
             <small class="mobile-sub">Distribuidora La Dorada S.A.S</small>
             <strong class="mobile-role">{{ auth.etiquetaRol() }} · {{ auth.usuario()?.nombre }}</strong>
