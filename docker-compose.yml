@@ -1,0 +1,15 @@
+# Base de datos local para desarrollo: docker compose up -d
+services:
+  db:
+    image: postgres:16
+    container_name: ladorada-db
+    environment:
+      POSTGRES_DB: ladorada
+      POSTGRES_USER: ladorada
+      POSTGRES_PASSWORD: ladorada
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  dbdata:

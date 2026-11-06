@@ -1,2 +1,23 @@
-/* You can add global styles to this file, and also import other style files */
 @import './styles/tokens.css';
+
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--ink); font-size: 15px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+a { color: var(--primary); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 16px; }
+.btn { font: inherit; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); padding: 9px 16px; border-radius: var(--r-s); cursor: pointer; }
+.btn:hover { filter: brightness(.9); }
+.btn.sec { background: transparent; color: var(--primary); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+input, select, textarea { font: inherit; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); color: var(--ink); }
+label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.badge.Pendiente { background: var(--citrico-bg); color: var(--citrico); }
+.badge.Confirmado { background: var(--menta-bg); color: var(--menta); }
+.badge.Despachado { background: var(--primary-soft); color: var(--primary); }
+.badge.Rechazado { background: var(--fram-bg); color: var(--fram); }
+.badge.Cancelado { background: var(--neu-bg); color: var(--neu); }
+.error { color: var(--fram); background: var(--fram-bg); padding: 8px 12px; border-radius: var(--r-s); }
