@@ -24,6 +24,8 @@ Frontend: `core` (sesión, guards, interceptores, servicios), `shared/ui` (compo
 
 Requisitos: Java 21, Node 20 o superior y PostgreSQL.
 
+Base de datos local (Docker): `docker compose up -d` en la raíz. Crea PostgreSQL con base, usuario y clave `ladorada`. Si usas un PostgreSQL propio, define `DB_URL`, `DB_USER` y `DB_PASSWORD`.
+
 Backend:
 
 ```bash
@@ -38,6 +40,10 @@ cd frontend
 npm install
 npm start                   # http://localhost:4200
 ```
+
+El frontend funciona sin backend mientras `USAR_MOCK` sea `true` en `frontend/src/app/core/config.ts`. Usuarios de prueba (clave 1234): `mrojas` (administrador), `lgomez` (vendedor), `msalazar` (bodega).
+
+Comprobar el backend: http://localhost:8080/api/health debe responder `{"estado":"ok"}`.
 
 La conexión a la base de datos se configura con variables de entorno o con `application-local.properties`. Ese archivo y los `.env` están ignorados por Git y no se suben.
 
