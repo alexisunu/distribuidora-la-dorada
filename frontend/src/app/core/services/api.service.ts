@@ -2,74 +2,456 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of, throwError, delay } from 'rxjs';
 import { API_URL, USAR_MOCK } from '../config';
-import { LoginResp, NuevoPedido, Pedido, Producto, Usuario } from '../models';
+import {
+  GuardarProductoDto,
+  GuardarUsuarioDto,
+  LoginResp,
+  NuevoPedido,
+  Pedido,
+  Producto,
+  Usuario,
+} from '../models';
 import { PEDIDOS, PRODUCTOS, USUARIOS } from '../mock-data';
+
+const STORAGE_KEYS = {
+  productos: 'ld_productos_v1',
+  pedidos: 'ld_pedidos_v1',
+  usuarios: 'ld_usuarios_v1',
+};
 
 /**
  * Única puerta de entrada a los datos. Las pantallas SOLO llaman a este servicio.
- * Con USAR_MOCK=true funciona sin backend; con false llama a la API (contrato en el plan de sprints).
+ * Con USAR_MOCK=true funciona sin backend y persiste en localStorage (RF-10);
+ * con USAR_MOCK=false llama a la API REST de Spring Boot.
  * Los errores llegan como { error: { mensaje } } (mismo formato que ApiError del backend).
  */
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
-  private productos = structuredClone(PRODUCTOS);
-  private pedidos = structuredClone(PEDIDOS);
+  private productos: Producto[] = this.cargarStorage(STORAGE_KEYS.productos, PRODUCTOS);
+  private pedidos: Pedido[] = this.cargarStorage(STORAGE_KEYS.pedidos, PEDIDOS);
+  private usuarios: (Usuario & { password: string })[] = this.cargarStorage(STORAGE_KEYS.usuarios, USUARIOS);
 
-  private err(mensaje: string, status = 409) { return throwError(() => ({ status, error: { status, mensaje } })); }
-  private sim<T>(v: T) { return of(v).pipe(delay(250)); }
+  private cargarStorage<T>(key: string, fallback: T): T {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore storage errors
+    }
+    return structuredClone(fallback);
+  }
+
+  private guardarStorage() {
+    try {
+      localStorage.setItem(STORAGE_KEYS.productos, JSON.stringify(this.productos));
+      localStorage.setItem(STORAGE_KEYS.pedidos, JSON.stringify(this.pedidos));
+      localStorage.setItem(STORAGE_KEYS.usuarios, JSON.stringify(this.usuarios));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  private usuarioActualNombre(): string {
+    try {
+      const raw = sessionStorage.getItem('usuario');
+      if (raw) {
+        const u = JSON.parse(raw) as Usuario;
+        if (u?.nombre) return u.nombre;
+      }
+    } catch {
+      // ignore
+    }
+    return 'Usuario actual';
+  }
+
+  private err(mensaje: string, status = 409) {
+    return throwError(() => ({ status, error: { status, mensaje } }));
+  }
+
+  private sim<T>(v: T) {
+    return of(structuredClone(v)).pipe(delay(120));
+  }
+
+  // ==================== AUTENTICACIÓN (RF-20 / CU-12) ====================
 
   login(username: string, password: string): Observable<LoginResp> {
-    if (!USAR_MOCK) return this.http.post<LoginResp>(`${API_URL}/auth/login`, { username, password });
-    const u = USUARIOS.find(x => x.username === username && x.password === password && x.activo);
-    if (!u) return this.err('Usuario o contraseña incorrectos.', 401);
+    if (!USAR_MOCK) {
+      return this.http.post<LoginResp>(`${API_URL}/auth/login`, { username, password });
+    }
+    const cleanUser = username.trim().toLowerCase();
+    const u = this.usuarios.find(x => x.username.toLowerCase() === cleanUser);
+    if (!u || u.password !== password) {
+      return this.err('Usuario o contraseña incorrectos.', 401);
+    }
+    if (!u.activo) {
+      return this.err('Tu usuario está inactivo. Habla con el administrador.', 403);
+    }
     const { password: _, ...usuario } = u;
-    return this.sim({ token: 'mock-token', usuario: usuario as Usuario });
+    return this.sim({ token: 'mock-jwt-token-' + u.id, usuario: usuario as Usuario });
   }
+
+  // ==================== PRODUCTOS (RF-01, RF-02, RF-14 / CU-01, CU-09, CU-10) ====================
 
   listarProductos(): Observable<Producto[]> {
-    return USAR_MOCK ? this.sim(this.productos) : this.http.get<Producto[]>(`${API_URL}/productos`);
+    if (!USAR_MOCK) {
+      return this.http.get<Producto[]>(`${API_URL}/productos`);
+    }
+    return this.sim(this.productos);
   }
 
+  crearProducto(dto: GuardarProductoDto): Observable<Producto> {
+    if (!USAR_MOCK) {
+      return this.http.post<Producto>(`${API_URL}/productos`, dto);
+    }
+    const codigo = dto.codigo.trim().toUpperCase();
+    const nombre = dto.nombre.trim();
+    if (!codigo || !nombre) {
+      return this.err('El código y el nombre del producto son obligatorios.', 400);
+    }
+    if (dto.precio <= 0) {
+      return this.err('El precio unitario debe ser mayor que cero.', 400);
+    }
+    if (dto.existencias < 0 || !Number.isInteger(Number(dto.existencias))) {
+      return this.err('Las existencias no pueden ser negativas.', 400);
+    }
+    if (this.productos.some(p => p.codigo.toUpperCase() === codigo)) {
+      return this.err(`Ya existe un producto con el código ${codigo}.`, 409);
+    }
+    const nuevo: Producto = {
+      id: Math.max(0, ...this.productos.map(p => p.id)) + 1,
+      codigo,
+      nombre,
+      descripcion: dto.descripcion?.trim() || '',
+      precio: Math.round(Number(dto.precio)),
+      existencias: Number(dto.existencias),
+      stockMinimo: dto.stockMinimo !== undefined ? Math.max(0, Number(dto.stockMinimo)) : 10,
+      activo: true,
+    };
+    this.productos.push(nuevo);
+    this.guardarStorage();
+    return this.sim(nuevo);
+  }
+
+  editarProducto(id: number, dto: GuardarProductoDto): Observable<Producto> {
+    if (!USAR_MOCK) {
+      return this.http.put<Producto>(`${API_URL}/productos/${id}`, dto);
+    }
+    const prod = this.productos.find(p => p.id === id);
+    if (!prod) return this.err('Producto no encontrado.', 404);
+    const codigo = dto.codigo.trim().toUpperCase();
+    const nombre = dto.nombre.trim();
+    if (!codigo || !nombre) {
+      return this.err('El código y el nombre del producto son obligatorios.', 400);
+    }
+    if (dto.precio <= 0) {
+      return this.err('El precio unitario debe ser mayor que cero.', 400);
+    }
+    if (dto.existencias < 0 || !Number.isInteger(Number(dto.existencias))) {
+      return this.err('Las existencias no pueden ser negativas.', 400);
+    }
+    if (this.productos.some(p => p.id !== id && p.codigo.toUpperCase() === codigo)) {
+      return this.err(`Ya existe otro producto con el código ${codigo}.`, 409);
+    }
+    prod.codigo = codigo;
+    prod.nombre = nombre;
+    prod.descripcion = dto.descripcion?.trim() ?? prod.descripcion;
+    prod.precio = Math.round(Number(dto.precio));
+    prod.existencias = Number(dto.existencias);
+    if (dto.stockMinimo !== undefined) {
+      prod.stockMinimo = Math.max(0, Number(dto.stockMinimo));
+    }
+    this.guardarStorage();
+    return this.sim(prod);
+  }
+
+  ajustarExistencias(id: number, existencias: number): Observable<Producto> {
+    if (!USAR_MOCK) {
+      return this.http.patch<Producto>(`${API_URL}/productos/${id}/existencias`, { existencias });
+    }
+    const prod = this.productos.find(p => p.id === id);
+    if (!prod) return this.err('Producto no encontrado.', 404);
+    if (existencias === null || existencias === undefined || isNaN(Number(existencias)) || Number(existencias) < 0 || !Number.isInteger(Number(existencias))) {
+      return this.err('Las existencias no pueden ser negativas', 400);
+    }
+    prod.existencias = Number(existencias);
+    this.guardarStorage();
+    return this.sim(prod);
+  }
+
+  // ==================== PEDIDOS (RF-03 a RF-17 / CU-02 a CU-08) ====================
+
   listarPedidos(): Observable<Pedido[]> {
-    return USAR_MOCK ? this.sim(this.pedidos) : this.http.get<Pedido[]>(`${API_URL}/pedidos`);
+    if (!USAR_MOCK) {
+      return this.http.get<Pedido[]>(`${API_URL}/pedidos`);
+    }
+    const ordenados = [...this.pedidos].sort((a, b) => b.id - a.id);
+    return this.sim(ordenados);
   }
 
   obtenerPedido(id: number): Observable<Pedido> {
-    if (!USAR_MOCK) return this.http.get<Pedido>(`${API_URL}/pedidos/${id}`);
+    if (!USAR_MOCK) {
+      return this.http.get<Pedido>(`${API_URL}/pedidos/${id}`);
+    }
     const p = this.pedidos.find(x => x.id === id);
     return p ? this.sim(p) : this.err('Pedido no encontrado.', 404);
   }
 
   crearPedido(n: NuevoPedido): Observable<Pedido> {
-    if (!USAR_MOCK) return this.http.post<Pedido>(`${API_URL}/pedidos`, n);
+    if (!USAR_MOCK) {
+      return this.http.post<Pedido>(`${API_URL}/pedidos`, n);
+    }
+    const cliente = (n.cliente ?? '').trim();
+    const telefonoCliente = (n.telefonoCliente ?? '').trim();
+    if (!cliente || !telefonoCliente) {
+      return this.err('El nombre y contacto del cliente son obligatorios para registrar el pedido', 400);
+    }
+    if (!n.lineas || n.lineas.length === 0) {
+      return this.err('Debe agregar al menos un producto al pedido', 400);
+    }
+    for (const l of n.lineas) {
+      if (!l.cantidad || l.cantidad <= 0 || !Number.isInteger(Number(l.cantidad))) {
+        return this.err('La cantidad de cada producto debe ser un entero mayor que cero.', 400);
+      }
+    }
+
     const lineas = n.lineas.map(l => {
       const pr = this.productos.find(p => p.id === l.idProducto)!;
-      return { idProducto: pr.id, nombre: pr.nombre, cantidad: l.cantidad, precioUnitario: pr.precio, subtotal: pr.precio * l.cantidad };
+      return {
+        idProducto: pr.id,
+        codigo: pr.codigo,
+        nombre: pr.nombre,
+        cantidad: Number(l.cantidad),
+        precioUnitario: pr.precio,
+        subtotal: pr.precio * Number(l.cantidad),
+      };
     });
     const ahora = new Date().toISOString();
+    const usuario = this.usuarioActualNombre();
     const p: Pedido = {
-      id: Math.max(...this.pedidos.map(x => x.id)) + 1, cliente: n.cliente, estado: 'Pendiente', fecha: ahora,
-      total: lineas.reduce((s, l) => s + l.subtotal, 0), vendedor: 'Usuario actual', lineas,
-      historial: [{ estadoAnterior: null, estadoNuevo: 'Pendiente', motivo: 'Registro inicial del pedido', usuario: 'Usuario actual', fecha: ahora }],
+      id: Math.max(1000, ...this.pedidos.map(x => x.id)) + 1,
+      cliente,
+      telefonoCliente,
+      estado: 'Pendiente',
+      fecha: ahora,
+      total: lineas.reduce((s, l) => s + l.subtotal, 0),
+      vendedor: usuario,
+      lineas,
+      historial: [
+        {
+          estadoAnterior: null,
+          estadoNuevo: 'Pendiente',
+          motivo: 'Registro inicial del pedido',
+          usuario,
+          fecha: ahora,
+        },
+      ],
     };
     this.pedidos.unshift(p);
+    this.guardarStorage();
     return this.sim(p);
   }
 
   confirmarPedido(id: number): Observable<Pedido> {
-    if (!USAR_MOCK) return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/confirmar`, {});
-    const p = this.pedidos.find(x => x.id === id)!;
+    if (!USAR_MOCK) {
+      return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/confirmar`, {});
+    }
+    const p = this.pedidos.find(x => x.id === id);
+    if (!p) return this.err('Pedido no encontrado.', 404);
+    if (p.estado !== 'Pendiente') {
+      return this.err(`El pedido ya se encuentra en estado ${p.estado}.`, 409);
+    }
+    for (const l of p.lineas) {
+      const pr = this.productos.find(x => x.id === l.idProducto);
+      const disp = pr ? pr.existencias : 0;
+      if (disp < l.cantidad) {
+        return this.err(`No hay existencias suficientes: solicitaste ${l.cantidad}, disponibles ${disp}.`, 409);
+      }
+    }
     for (const l of p.lineas) {
       const pr = this.productos.find(x => x.id === l.idProducto)!;
-      if (pr.existencias < l.cantidad)
-        return this.err(`No hay existencias suficientes: solicitaste ${l.cantidad}, disponibles ${pr.existencias}.`);
+      pr.existencias -= l.cantidad;
     }
-    for (const l of p.lineas) this.productos.find(x => x.id === l.idProducto)!.existencias -= l.cantidad;
+    const usuario = this.usuarioActualNombre();
     p.estado = 'Confirmado';
-    p.historial.push({ estadoAnterior: 'Pendiente', estadoNuevo: 'Confirmado', motivo: 'Confirmación de pedido', usuario: 'Usuario actual', fecha: new Date().toISOString() });
+    p.historial.push({
+      estadoAnterior: 'Pendiente',
+      estadoNuevo: 'Confirmado',
+      motivo: 'Confirmación y descuento de inventario',
+      usuario,
+      fecha: new Date().toISOString(),
+    });
+    this.guardarStorage();
     return this.sim(p);
   }
 
-  // rechazar / cancelar / despachar: mismo patrón. Max los completa en el Sprint 2-3 (ver contrato).
+  rechazarPedido(id: number, motivo: string): Observable<Pedido> {
+    if (!USAR_MOCK) {
+      return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/rechazar`, { motivo });
+    }
+    const p = this.pedidos.find(x => x.id === id);
+    if (!p) return this.err('Pedido no encontrado.', 404);
+    if (p.estado !== 'Pendiente') {
+      return this.err('Solo se puede rechazar un pedido en estado Pendiente.', 409);
+    }
+    if (!motivo || !motivo.trim()) {
+      return this.err('Debe seleccionar un motivo para rechazar el pedido', 400);
+    }
+    const usuario = this.usuarioActualNombre();
+    p.estado = 'Rechazado';
+    p.historial.push({
+      estadoAnterior: 'Pendiente',
+      estadoNuevo: 'Rechazado',
+      motivo: motivo.trim(),
+      usuario,
+      fecha: new Date().toISOString(),
+    });
+    this.guardarStorage();
+    return this.sim(p);
+  }
+
+  cancelarPedido(id: number, motivo: string): Observable<Pedido> {
+    if (!USAR_MOCK) {
+      return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/cancelar`, { motivo });
+    }
+    const p = this.pedidos.find(x => x.id === id);
+    if (!p) return this.err('Pedido no encontrado.', 404);
+    if (p.estado !== 'Pendiente' && p.estado !== 'Confirmado') {
+      return this.err(`No se puede cancelar un pedido en estado ${p.estado}`, 409);
+    }
+    if (!motivo || !motivo.trim()) {
+      return this.err('Debe seleccionar un motivo para cancelar el pedido', 400);
+    }
+    const estadoPrevio = p.estado;
+    if (estadoPrevio === 'Confirmado') {
+      for (const l of p.lineas) {
+        const pr = this.productos.find(x => x.id === l.idProducto);
+        if (pr) pr.existencias += l.cantidad;
+      }
+    }
+    const usuario = this.usuarioActualNombre();
+    p.estado = 'Cancelado';
+    p.historial.push({
+      estadoAnterior: estadoPrevio,
+      estadoNuevo: 'Cancelado',
+      motivo: motivo.trim(),
+      usuario,
+      fecha: new Date().toISOString(),
+    });
+    this.guardarStorage();
+    return this.sim(p);
+  }
+
+  despacharPedido(id: number): Observable<Pedido> {
+    if (!USAR_MOCK) {
+      return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/despachar`, {});
+    }
+    const p = this.pedidos.find(x => x.id === id);
+    if (!p) return this.err('Pedido no encontrado.', 404);
+    if (p.estado !== 'Confirmado') {
+      return this.err('Solo se pueden despachar pedidos en estado Confirmado.', 409);
+    }
+    const usuario = this.usuarioActualNombre();
+    p.estado = 'Despachado';
+    p.historial.push({
+      estadoAnterior: 'Confirmado',
+      estadoNuevo: 'Despachado',
+      motivo: 'Despacho completado en bodega',
+      usuario,
+      fecha: new Date().toISOString(),
+    });
+    this.guardarStorage();
+    return this.sim(p);
+  }
+
+  // ==================== USUARIOS (RF-19 / CU-11) ====================
+
+  listarUsuarios(): Observable<Usuario[]> {
+    if (!USAR_MOCK) {
+      return this.http.get<Usuario[]>(`${API_URL}/usuarios`);
+    }
+    const lista = this.usuarios.map(({ password: _, ...u }) => u as Usuario);
+    return this.sim(lista);
+  }
+
+  crearUsuario(dto: GuardarUsuarioDto): Observable<Usuario> {
+    if (!USAR_MOCK) {
+      return this.http.post<Usuario>(`${API_URL}/usuarios`, dto);
+    }
+    const nombre = dto.nombre.trim();
+    const username = dto.username.trim().toLowerCase();
+    const password = (dto.password ?? '').trim();
+    if (!nombre || !username) {
+      return this.err('El nombre completo y el nombre de usuario son obligatorios.', 400);
+    }
+    if (password.length < 4) {
+      return this.err('La contraseña temporal debe tener al menos 4 caracteres.', 400);
+    }
+    if (this.usuarios.some(u => u.username.toLowerCase() === username)) {
+      return this.err(`El nombre de usuario "${username}" ya está registrado.`, 409);
+    }
+    const nuevo: Usuario & { password: string } = {
+      id: Math.max(0, ...this.usuarios.map(u => u.id)) + 1,
+      nombre,
+      username,
+      rol: dto.rol,
+      activo: true,
+      fechaRetiro: null,
+      password,
+    };
+    this.usuarios.push(nuevo);
+    this.guardarStorage();
+    const { password: _, ...sinPass } = nuevo;
+    return this.sim(sinPass);
+  }
+
+  editarUsuario(id: number, dto: GuardarUsuarioDto): Observable<Usuario> {
+    if (!USAR_MOCK) {
+      return this.http.put<Usuario>(`${API_URL}/usuarios/${id}`, dto);
+    }
+    const u = this.usuarios.find(x => x.id === id);
+    if (!u) return this.err('Usuario no encontrado.', 404);
+    const nombre = dto.nombre.trim();
+    const username = dto.username.trim().toLowerCase();
+    if (!nombre || !username) {
+      return this.err('El nombre completo y el nombre de usuario son obligatorios.', 400);
+    }
+    if (this.usuarios.some(x => x.id !== id && x.username.toLowerCase() === username)) {
+      return this.err(`El nombre de usuario "${username}" ya está en uso.`, 409);
+    }
+    if (u.rol === 'ADMINISTRADOR' && dto.rol !== 'ADMINISTRADOR' && u.activo) {
+      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo).length;
+      if (adminsActivos <= 1) {
+        return this.err('No se puede cambiar el rol al último Administrador activo.', 409);
+      }
+    }
+    u.nombre = nombre;
+    u.username = username;
+    u.rol = dto.rol;
+    if (dto.password && dto.password.trim().length >= 4) {
+      u.password = dto.password.trim();
+    }
+    this.guardarStorage();
+    const { password: _, ...sinPass } = u;
+    return this.sim(sinPass);
+  }
+
+  cambiarEstadoUsuario(id: number, activo: boolean): Observable<Usuario> {
+    if (!USAR_MOCK) {
+      return this.http.patch<Usuario>(`${API_URL}/usuarios/${id}/estado`, { activo });
+    }
+    const u = this.usuarios.find(x => x.id === id);
+    if (!u) return this.err('Usuario no encontrado.', 404);
+    if (!activo && u.rol === 'ADMINISTRADOR' && u.activo) {
+      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo).length;
+      if (adminsActivos <= 1) {
+        return this.err('No se puede desactivar al último Administrador activo.', 409);
+      }
+    }
+    u.activo = activo;
+    u.fechaRetiro = activo ? null : new Date().toISOString();
+    this.guardarStorage();
+    const { password: _, ...sinPass } = u;
+    return this.sim(sinPass);
+  }
 }
