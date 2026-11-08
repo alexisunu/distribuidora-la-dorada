@@ -19,9 +19,10 @@ ORDER BY
         WHEN 'CANCELADO'  THEN 4
         WHEN 'RECHAZADO'  THEN 5
     END;
+    
 
 -- 2. LISTADO DE PEDIDOS FILTRADO POR ESTADO CON USUARIO RESPONSABLE (RF-08, RF-13, RF-17)
-
+-- Parámetro de filtro: :'estado'::text = 'PENDIENTE', o NULL para listar todos
 SELECT 
     p.id_pedido,
     p.nombre_cliente,
@@ -33,7 +34,7 @@ SELECT
     u.nombre_completo AS nombre_responsable
 FROM pedido p
 INNER JOIN usuario u ON p.id_usuario = u.id_usuario
-WHERE (:estado IS NULL OR p.estado = :estado)
+WHERE (:'estado'::text IS NULL OR p.estado = :'estado'::text)
 ORDER BY p.fecha_creacion DESC;
 
 -- 3A. DETALLE DE UN PEDIDO: CABECERA E ÍTEMS CON SUBTOTAL CALCULADO (RF-03, RF-08, RF-12)
