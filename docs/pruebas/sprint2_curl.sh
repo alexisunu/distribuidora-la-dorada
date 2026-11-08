@@ -62,7 +62,7 @@ api POST /pedidos "$VEND" "{\"cliente\":\"Doble clic\",\"telefonoCliente\":\"300
 P3=$(id_de "$CUERPO"); BANTES=$(stock_de REF-007)
 T=$(mktemp -d)
 for i in 1 2; do curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/pedidos/$P3/confirmar" -H "Authorization: Bearer $VEND" > "$T/$i" & done; wait
-CODIGOS=$(cat "$T/1" "$T/2" | sort | tr '\n' ' '); rm -rf "$T"
+CODIGOS=$(cat "$T/1" "$T/2" | tr -d '\r' | sort | tr '\n' ' '); rm -rf "$T"
 verificar "una petición 200 y otra 409" "200 409 " "$CODIGOS"
 verificar "se descuenta una sola vez" "$((BANTES-3))" "$(stock_de REF-007)"
 
