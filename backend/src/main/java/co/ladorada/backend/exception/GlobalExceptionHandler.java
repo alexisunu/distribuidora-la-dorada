@@ -9,6 +9,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -16,6 +17,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NegocioException.class)
     public ResponseEntity<ApiError> negocio(NegocioException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(409, e.getMessage()));
+    }
+
+    @ExceptionHandler(SolicitudInvalidaException.class)
+    public ResponseEntity<ApiError> solicitudInvalida(SolicitudInvalidaException e) {
+        return ResponseEntity.badRequest().body(ApiError.of(400, e.getMessage()));
+    }
+
+    /** Ej: GET /api/pedidos/abc (el id no es un número). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> parametroInvalido(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.badRequest().body(ApiError.of(400, "El parámetro " + e.getName() + " no es válido."));
     }
 
     @ExceptionHandler(NoEncontradoException.class)
