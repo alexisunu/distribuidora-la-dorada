@@ -40,6 +40,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiError.of(401, e.getMessage()));
     }
 
+    @ExceptionHandler(ProhibidoException.class)
+    public ResponseEntity<ApiError> prohibidoRecurso(ProhibidoException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiError.of(403, e.getMessage()));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> prohibido(AccessDeniedException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiError.of(403, "No tienes permiso para esta acción."));

@@ -2,6 +2,7 @@ package co.ladorada.backend.service;
 
 import java.math.BigDecimal;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,9 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import co.ladorada.backend.dto.PedidoDto;
 import co.ladorada.backend.dto.PedidoRequest;
+import co.ladorada.backend.dto.ResumenDto;
 import co.ladorada.backend.exception.NegocioException;
 import co.ladorada.backend.exception.NoAutorizadoException;
 import co.ladorada.backend.exception.NoEncontradoException;
+import co.ladorada.backend.exception.ProhibidoException;
 import co.ladorada.backend.exception.SolicitudInvalidaException;
 import co.ladorada.backend.model.DetallePedido;
 import co.ladorada.backend.model.EstadoPedido;
@@ -36,6 +39,8 @@ public class PedidoService {
 
     private static final String MOTIVO_INICIAL = "Registro inicial del pedido";
     private static final String MOTIVO_CONFIRMACION = "Confirmación y descuento de inventario";
+    private static final String MOTIVO_DESPACHO = "Despacho del pedido";
+    private static final String ROL_BODEGA = "BODEGA";
 
     private final PedidoRepository pedidos;
     private final ProductoRepository productos;
@@ -121,10 +126,41 @@ public class PedidoService {
         return lista.stream().map(PedidoDto::de).toList();
     }
 
+    /**
+     * Detalle de un pedido. Bodega solo ve los Confirmados y Despachados (su trabajo); cualquier otro estado
+     * responde 403. Se valida aquí, en el servidor, no solo ocultando botones en la pantalla.
+     */
     @Transactional(readOnly = true)
-    public PedidoDto obtener(Integer id) {
-        return PedidoDto.de(pedidos.buscarConDetalle(id)
-                .orElseThrow(() -> new NoEncontradoException("Pedido no encontrado.")));
+    public PedidoDto obtener(Integer id, String rol) {
+        Pedido p = pedidos.buscarConDetalle(id).orElseThrow(() -> new NoEncontradoException("Pedido no encontrado."));
+        if (ROL_BODEGA.equals(rol) && p.getEstado() != EstadoPedido.CONFIRMADO && p.getEstado() != EstadoPedido.DESPACHADO) {
+            throw new ProhibidoException("Bodega solo puede ver pedidos Confirmados o Despachados.");
+        }
+        return PedidoDto.de(p);
+    }
+
+    /** Cola de Bodega (CU-07): solo los Confirmados, del más antiguo al más reciente. */
+    @Transactional(readOnly = true)
+    public List<PedidoDto> colaDespachos() {
+        return pedidos.findByEstadoOrderByFechaCreacionAscIdAsc(EstadoPedido.CONFIRMADO).stream()
+                .map(PedidoDto::de).toList();
+    }
+
+    /** Conteo por estado (RF-16). Arranca con los cinco estados en 0 para que la pantalla nunca reciba huecos. */
+    @Transactional(readOnly = true)
+    public ResumenDto resumen() {
+        Map<String, Long> porEstado = new LinkedHashMap<>();
+        for (EstadoPedido e : EstadoPedido.values()) {
+            porEstado.put(e.etiqueta(), 0L);
+        }
+        long total = 0;
+        for (Object[] fila : pedidos.contarPorEstado()) {
+            EstadoPedido estado = (EstadoPedido) fila[0];
+            long cantidad = ((Number) fila[1]).longValue();
+            porEstado.put(estado.etiqueta(), cantidad);
+            total += cantidad;
+        }
+        return new ResumenDto(total, porEstado);
     }
 
     // ------------------------------------------------------------ confirmar
@@ -155,6 +191,26 @@ public class PedidoService {
         }
         p.setEstado(EstadoPedido.CONFIRMADO);
         p.agregarHistorial(EstadoPedido.PENDIENTE, EstadoPedido.CONFIRMADO, MOTIVO_CONFIRMACION, responsable);
+        return PedidoDto.de(p);
+    }
+
+    // ------------------------------------------------------------ despachar
+
+    /**
+     * Confirmado → Despachado (CU-07). Usa el mismo bloqueo FOR UPDATE del pedido que confirmar y revisa el estado
+     * ya con el bloqueo puesto: si dos despachos llegan a la vez, el segundo espera, ve Despachado y recibe 409.
+     * No toca las existencias: se descontaron al confirmar.
+     */
+    @Transactional
+    public PedidoDto despachar(Integer id, Integer idUsuario) {
+        Usuario responsable = usuarioActivo(idUsuario);
+        Pedido p = bloquear(id);                                    // FOR UPDATE del pedido
+        if (p.getEstado() != EstadoPedido.CONFIRMADO) {              // el estado se revisa BAJO el bloqueo
+            throw new NegocioException("Solo se puede despachar un pedido en estado Confirmado. El pedido está en estado "
+                    + p.getEstado().etiqueta() + ".");
+        }
+        p.setEstado(EstadoPedido.DESPACHADO);
+        p.agregarHistorial(EstadoPedido.CONFIRMADO, EstadoPedido.DESPACHADO, MOTIVO_DESPACHO, responsable);
         return PedidoDto.de(p);
     }
 
