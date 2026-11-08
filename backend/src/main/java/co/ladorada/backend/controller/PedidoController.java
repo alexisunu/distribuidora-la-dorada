@@ -18,9 +18,10 @@ import org.springframework.web.bind.annotation.RestController;
 import co.ladorada.backend.dto.MotivoRequest;
 import co.ladorada.backend.dto.PedidoDto;
 import co.ladorada.backend.dto.PedidoRequest;
+import co.ladorada.backend.dto.ResumenDto;
 import co.ladorada.backend.service.PedidoService;
 
-/** Matriz de permisos (documento técnico, Tabla 3): Bodega solo consulta el detalle; despachar llega en el Sprint 3. */
+/** Matriz de permisos (documento técnico, Tabla 3). Bodega solo despacha y ve el detalle de Confirmados y Despachados. */
 @RestController
 @RequestMapping("/api/pedidos")
 public class PedidoController {
@@ -37,10 +38,17 @@ public class PedidoController {
         return service.listar(estado);
     }
 
+    /** Va antes de "/{id}" a propósito: así se lee que "resumen" es una ruta fija y no un id. */
+    @GetMapping("/resumen")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public ResumenDto resumen() {
+        return service.resumen();
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR','BODEGA')")
-    public PedidoDto obtener(@PathVariable Integer id) {
-        return service.obtener(id);
+    public PedidoDto obtener(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+        return service.obtener(id, jwt.getClaimAsString("rol"));
     }
 
     @PostMapping
@@ -68,6 +76,12 @@ public class PedidoController {
     public PedidoDto cancelar(@PathVariable Integer id, @RequestBody(required = false) MotivoRequest r,
                               @AuthenticationPrincipal Jwt jwt) {
         return service.cancelar(id, r == null ? null : r.motivo(), idUsuario(jwt));
+    }
+
+    @PostMapping("/{id}/despachar")
+    @PreAuthorize("hasAnyRole('BODEGA','ADMINISTRADOR')")
+    public PedidoDto despachar(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+        return service.despachar(id, idUsuario(jwt));
     }
 
     /** El responsable sale del token firmado (claim "uid"), no de algo que mande el cliente. */

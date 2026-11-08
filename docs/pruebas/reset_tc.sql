@@ -3,3 +3,4 @@
 -- NO es una migración de Flyway: no va en db/migration.
 UPDATE producto SET stock_actual = 20 WHERE referencia = 'REF-001';  -- Detergente (TC-01)
 UPDATE producto SET stock_actual = 8  WHERE referencia = 'REF-002';  -- Jabón (TC-02)
+UPDATE producto SET stock_actual = 40 WHERE referencia = 'REF-007';  -- Jabón en barra (sprint3_curl.sh)

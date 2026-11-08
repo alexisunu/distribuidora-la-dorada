@@ -30,4 +30,12 @@ public interface PedidoRepository extends JpaRepository<Pedido, Integer> {
 
     @EntityGraph(attributePaths = {"usuario", "detalles", "detalles.producto"})
     List<Pedido> findByEstadoOrderByIdDesc(EstadoPedido estado);
+
+    /** Cola de despachos: los de un estado, del más antiguo al más reciente (el id desempata fechas iguales). */
+    @EntityGraph(attributePaths = {"usuario", "detalles", "detalles.producto"})
+    List<Pedido> findByEstadoOrderByFechaCreacionAscIdAsc(EstadoPedido estado);
+
+    /** Resumen: una sola consulta con GROUP BY. Cada fila es {estado, cantidad}; los estados sin pedidos no aparecen. */
+    @Query("select p.estado, count(p) from Pedido p group by p.estado")
+    List<Object[]> contarPorEstado();
 }
