@@ -1,4 +1,5 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { Pedido } from '../../core/models';
 
@@ -20,7 +21,7 @@ import { Pedido } from '../../core/models';
     }
 
     @if (error()) {
-      <div class="error" style="margin-bottom: 14px;">{{ error() }}</div>
+      <div class="error" style="margin-bottom: 14px;" role="alert">{{ error() }}</div>
     }
 
     <!-- Tabla de Escritorio (Mockup 8) -->
@@ -37,7 +38,7 @@ import { Pedido } from '../../core/models';
         </thead>
         <tbody>
           @for (p of colaConfirmados(); track p.id) {
-            <tr>
+            <tr class="clickable-row" (click)="abrirDetalle(p.id)">
               <td class="num-cell">#{{ p.id }}</td>
               <td>
                 <strong>{{ p.cliente }}</strong>
@@ -45,7 +46,7 @@ import { Pedido } from '../../core/models';
               </td>
               <td class="date-cell">{{ formatearFecha(p.fecha) }}</td>
               <td>{{ p.lineas.length }} {{ p.lineas.length === 1 ? 'producto' : 'productos' }}</td>
-              <td>
+              <td (click)="$event.stopPropagation()">
                 <button
                   type="button"
                   class="btn sm"
@@ -68,7 +69,7 @@ import { Pedido } from '../../core/models';
     <!-- Tarjetas en Móvil (Mockup 8) -->
     <div class="mobile-queue only-mobile">
       @for (p of colaConfirmados(); track p.id) {
-        <div class="dispatch-card">
+        <div class="dispatch-card" (click)="abrirDetalle(p.id)">
           <div class="dispatch-top">
             <strong>#{{ p.id }} · {{ p.cliente }}</strong>
             <span class="badge Confirmado">Confirmado</span>
@@ -81,7 +82,7 @@ import { Pedido } from '../../core/models';
             type="button"
             class="btn full-dispatch-btn"
             [disabled]="despachandoId() === p.id"
-            (click)="despachar(p)"
+            (click)="$event.stopPropagation(); despachar(p)"
           >
             Despachar
           </button>
@@ -98,6 +99,15 @@ import { Pedido } from '../../core/models';
   styles: [`
     .num-cell {
       font-weight: 700;
+    }
+
+    .clickable-row {
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+
+    .clickable-row:hover td {
+      background: var(--bg);
     }
 
     .date-cell {
@@ -136,6 +146,7 @@ import { Pedido } from '../../core/models';
       display: flex;
       flex-direction: column;
       gap: 8px;
+      cursor: pointer;
     }
 
     .dispatch-top {
@@ -164,27 +175,31 @@ import { Pedido } from '../../core/models';
 })
 export class DespachosComponent implements OnInit {
   private api = inject(ApiService);
+  private router = inject(Router);
 
-  pedidos = signal<Pedido[]>([]);
+  /** Sprint 3 (1): /api/despachos ya devuelve solo los Confirmados del más antiguo al más reciente */
+  colaConfirmados = signal<Pedido[]>([]);
   despachandoId = signal<number | null>(null);
   mensajeOk = signal('');
   error = signal('');
-
-  /** Pedidos en estado Confirmado ordenados del más antiguo al más reciente (Mockup 8 / CU-07) */
-  readonly colaConfirmados = computed(() => {
-    return this.pedidos()
-      .filter(p => p.estado === 'Confirmado')
-      .sort((a, b) => a.id - b.id);
-  });
 
   ngOnInit() {
     this.cargar();
   }
 
   cargar() {
-    this.api.listarPedidos().subscribe(lista => this.pedidos.set(lista));
+    this.error.set('');
+    this.api.listarDespachos().subscribe({
+      error: e => this.error.set(e?.error?.mensaje ?? 'No fue posible cargar la cola de despachos.'),
+      next: lista => this.colaConfirmados.set(lista),
+    });
   }
 
+  abrirDetalle(id: number) {
+    this.router.navigate(['/pedidos', id]);
+  }
+
+  /** Sprint 3 (2): POST /api/pedidos/{id}/despachar (sin cuerpo). Si falla, muestra error.mensaje */
   despachar(p: Pedido) {
     this.error.set('');
     this.despachandoId.set(p.id);
@@ -193,10 +208,10 @@ export class DespachosComponent implements OnInit {
         this.despachandoId.set(null);
         this.error.set(e?.error?.mensaje ?? 'No fue posible despachar el pedido.');
       },
-      next: () => {
+      next: actualizado => {
         this.despachandoId.set(null);
         this.cargar();
-        this.mensajeOk.set(`Pedido #${p.id} (${p.cliente}) marcado como Despachado.`);
+        this.mensajeOk.set(`Pedido #${actualizado.id} (${actualizado.cliente}) marcado como ${actualizado.estado}.`);
         setTimeout(() => this.mensajeOk.set(''), 3500);
       },
     });

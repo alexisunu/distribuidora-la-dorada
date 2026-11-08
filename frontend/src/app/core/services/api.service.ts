@@ -3,26 +3,30 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, of, throwError, delay } from 'rxjs';
 import { API_URL, USAR_MOCK } from '../config';
 import {
+  ActualizarPedidoDto,
+  EstadoPedido,
   GuardarProductoDto,
   GuardarUsuarioDto,
   LoginResp,
   NuevoPedido,
   Pedido,
   Producto,
+  ResumenPedidos,
+  Rol,
   Usuario,
 } from '../models';
 import { PEDIDOS, PRODUCTOS, USUARIOS } from '../mock-data';
 
 const STORAGE_KEYS = {
-  productos: 'ld_productos_v1',
-  pedidos: 'ld_pedidos_v1',
-  usuarios: 'ld_usuarios_v1',
+  productos: 'ld_productos_v2',
+  pedidos: 'ld_pedidos_v2',
+  usuarios: 'ld_usuarios_v2',
 };
 
 /**
  * Única puerta de entrada a los datos. Las pantallas SOLO llaman a este servicio.
- * Con USAR_MOCK=true funciona sin backend y persiste en localStorage (RF-10);
- * con USAR_MOCK=false llama a la API REST de Spring Boot.
+ * Con USAR_MOCK=true funciona sin backend y persiste en localStorage;
+ * con USAR_MOCK=false llama a la API REST de Spring Boot según los contratos del Sprint 3.
  * Los errores llegan como { error: { mensaje } } (mismo formato que ApiError del backend).
  */
 @Injectable({ providedIn: 'root' })
@@ -52,17 +56,22 @@ export class ApiService {
     }
   }
 
-  private usuarioActualNombre(): string {
+  private usuarioActual(): Usuario | null {
     try {
       const raw = sessionStorage.getItem('usuario');
-      if (raw) {
-        const u = JSON.parse(raw) as Usuario;
-        if (u?.nombre) return u.nombre;
-      }
+      if (raw) return JSON.parse(raw) as Usuario;
     } catch {
       // ignore
     }
-    return 'Usuario actual';
+    return null;
+  }
+
+  private usuarioActualNombre(): string {
+    return this.usuarioActual()?.nombre || 'Usuario actual';
+  }
+
+  private rolActual(): Rol | null {
+    return this.usuarioActual()?.rol ?? null;
   }
 
   private err(mensaje: string, status = 409) {
@@ -91,7 +100,7 @@ export class ApiService {
     return this.sim({ token: 'mock-jwt-token-' + u.id, usuario: usuario as Usuario });
   }
 
-  // ==================== PRODUCTOS (RF-01, RF-02, RF-14 / CU-01, CU-09, CU-10) ====================
+  // ==================== PRODUCTOS (RF-01, RF-02, RF-14) ====================
 
   listarProductos(): Observable<Producto[]> {
     if (!USAR_MOCK) {
@@ -179,22 +188,80 @@ export class ApiService {
     return this.sim(prod);
   }
 
-  // ==================== PEDIDOS (RF-03 a RF-17 / CU-02 a CU-08) ====================
+  // ==================== PEDIDOS, RESUMEN Y DESPACHOS (SPRINT 3) ====================
 
-  listarPedidos(): Observable<Pedido[]> {
+  /**
+   * GET /api/pedidos (solo Vendedor y Administrador; acepta ?estado=Pendiente)
+   */
+  listarPedidos(estado?: EstadoPedido): Observable<Pedido[]> {
     if (!USAR_MOCK) {
-      return this.http.get<Pedido[]>(`${API_URL}/pedidos`);
+      return estado
+        ? this.http.get<Pedido[]>(`${API_URL}/pedidos`, { params: { estado } })
+        : this.http.get<Pedido[]>(`${API_URL}/pedidos`);
     }
-    const ordenados = [...this.pedidos].sort((a, b) => b.id - a.id);
-    return this.sim(ordenados);
+    if (this.rolActual() === 'BODEGA') {
+      return this.err('No tienes permisos para consultar el listado global de pedidos.', 403);
+    }
+    let lista = [...this.pedidos].sort((a, b) => b.id - a.id);
+    if (estado) {
+      lista = lista.filter(p => p.estado === estado);
+    }
+    return this.sim(lista);
   }
 
+  /**
+   * Sprint 3 (1): GET /api/despachos
+   * Devuelve solo los pedidos Confirmados, del más antiguo al más reciente.
+   */
+  listarDespachos(): Observable<Pedido[]> {
+    if (!USAR_MOCK) {
+      return this.http.get<Pedido[]>(`${API_URL}/despachos`);
+    }
+    const confirmados = this.pedidos
+      .filter(p => p.estado === 'Confirmado')
+      .sort((a, b) => a.id - b.id);
+    return this.sim(confirmados);
+  }
+
+  /**
+   * Sprint 3 (3): GET /api/pedidos/resumen
+   * Responde {"total": 12, "porEstado": {"Pendiente": 3, "Confirmado": 2, "Despachado": 5, "Rechazado": 1, "Cancelado": 1}}
+   */
+  obtenerResumen(): Observable<ResumenPedidos> {
+    if (!USAR_MOCK) {
+      return this.http.get<ResumenPedidos>(`${API_URL}/pedidos/resumen`);
+    }
+    const porEstado: Record<EstadoPedido, number> = {
+      Pendiente: 0,
+      Confirmado: 0,
+      Despachado: 0,
+      Rechazado: 0,
+      Cancelado: 0,
+    };
+    for (const p of this.pedidos) {
+      porEstado[p.estado] = (porEstado[p.estado] ?? 0) + 1;
+    }
+    return this.sim({
+      total: this.pedidos.length,
+      porEstado,
+    });
+  }
+
+  /**
+   * Sprint 3 (4): GET /api/pedidos/{id}
+   * Bodega solo puede abrir el detalle de pedidos Confirmados o Despachados;
+   * con cualquier otro estado responde 403 con el mensaje en error.mensaje.
+   */
   obtenerPedido(id: number): Observable<Pedido> {
     if (!USAR_MOCK) {
       return this.http.get<Pedido>(`${API_URL}/pedidos/${id}`);
     }
     const p = this.pedidos.find(x => x.id === id);
-    return p ? this.sim(p) : this.err('Pedido no encontrado.', 404);
+    if (!p) return this.err('Pedido no encontrado.', 404);
+    if (this.rolActual() === 'BODEGA' && p.estado !== 'Confirmado' && p.estado !== 'Despachado') {
+      return this.err('Bodega solo puede consultar el detalle de pedidos en estado Confirmado o Despachado.', 403);
+    }
+    return this.sim(p);
   }
 
   crearPedido(n: NuevoPedido): Observable<Pedido> {
@@ -248,6 +315,59 @@ export class ApiService {
       ],
     };
     this.pedidos.unshift(p);
+    this.guardarStorage();
+    return this.sim(p);
+  }
+
+  /**
+   * Ajuste pre-congelamiento (1): PUT /api/pedidos/{id}
+   * Edita las líneas de un pedido en estado Pendiente con { "lineas": [ { "idProducto": 3, "cantidad": 8 } ] }
+   * y devuelve el Pedido actualizado con su historial.
+   */
+  actualizarPedido(id: number, dto: ActualizarPedidoDto): Observable<Pedido> {
+    if (!USAR_MOCK) {
+      return this.http.put<Pedido>(`${API_URL}/pedidos/${id}`, dto);
+    }
+    const p = this.pedidos.find(x => x.id === id);
+    if (!p) return this.err('Pedido no encontrado.', 404);
+    if (p.estado !== 'Pendiente') {
+      return this.err('Solo se pueden editar los productos de un pedido en estado Pendiente.', 409);
+    }
+    if (!dto.lineas || dto.lineas.length === 0) {
+      return this.err('El pedido debe conservar al menos un producto.', 400);
+    }
+    for (const l of dto.lineas) {
+      if (!l.cantidad || l.cantidad <= 0 || !Number.isInteger(Number(l.cantidad))) {
+        return this.err('La cantidad de cada línea debe ser un entero mayor que cero.', 400);
+      }
+    }
+
+    const nuevasLineas = dto.lineas.map(l => {
+      const previa = p.lineas.find(pl => pl.idProducto === l.idProducto);
+      const pr = this.productos.find(prod => prod.id === l.idProducto);
+      const precioUnitario = previa?.precioUnitario ?? pr?.precio ?? 0;
+      const nombre = previa?.nombre ?? pr?.nombre ?? `Producto #${l.idProducto}`;
+      const codigo = previa?.codigo ?? pr?.codigo;
+      const cantidad = Number(l.cantidad);
+      return {
+        idProducto: l.idProducto,
+        codigo,
+        nombre,
+        cantidad,
+        precioUnitario,
+        subtotal: precioUnitario * cantidad,
+      };
+    });
+
+    p.lineas = nuevasLineas;
+    p.total = nuevasLineas.reduce((acc, item) => acc + item.subtotal, 0);
+    p.historial.push({
+      estadoAnterior: 'Pendiente',
+      estadoNuevo: 'Pendiente',
+      motivo: 'Edición de cantidades/productos en pedido pendiente',
+      usuario: this.usuarioActualNombre(),
+      fecha: new Date().toISOString(),
+    });
     this.guardarStorage();
     return this.sim(p);
   }
@@ -342,14 +462,18 @@ export class ApiService {
     return this.sim(p);
   }
 
+  /**
+   * Sprint 3 (2): POST /api/pedidos/{id}/despachar (sin cuerpo)
+   * Devuelve el Pedido ya en Despachado. Si falla, el 409 trae el texto en error.mensaje.
+   */
   despacharPedido(id: number): Observable<Pedido> {
     if (!USAR_MOCK) {
-      return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/despachar`, {});
+      return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/despachar`, null);
     }
     const p = this.pedidos.find(x => x.id === id);
     if (!p) return this.err('Pedido no encontrado.', 404);
     if (p.estado !== 'Confirmado') {
-      return this.err('Solo se pueden despachar pedidos en estado Confirmado.', 409);
+      return this.err(`No se puede despachar un pedido en estado ${p.estado}.`, 409);
     }
     const usuario = this.usuarioActualNombre();
     p.estado = 'Despachado';
@@ -370,7 +494,16 @@ export class ApiService {
     if (!USAR_MOCK) {
       return this.http.get<Usuario[]>(`${API_URL}/usuarios`);
     }
-    const lista = this.usuarios.map(({ password: _, ...u }) => u as Usuario);
+    // Filtramos alias duplicados de prueba para mostrar una lista limpia
+    const vistos = new Set<string>();
+    const lista: Usuario[] = [];
+    for (const { password: _, ...u } of this.usuarios) {
+      if (u.username === 'admin' || u.username === 'bodega1') continue;
+      if (!vistos.has(u.username)) {
+        vistos.add(u.username);
+        lista.push(u as Usuario);
+      }
+    }
     return this.sim(lista);
   }
 
@@ -420,7 +553,7 @@ export class ApiService {
       return this.err(`El nombre de usuario "${username}" ya está en uso.`, 409);
     }
     if (u.rol === 'ADMINISTRADOR' && dto.rol !== 'ADMINISTRADOR' && u.activo) {
-      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo).length;
+      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo && x.username !== 'admin').length;
       if (adminsActivos <= 1) {
         return this.err('No se puede cambiar el rol al último Administrador activo.', 409);
       }
@@ -443,7 +576,7 @@ export class ApiService {
     const u = this.usuarios.find(x => x.id === id);
     if (!u) return this.err('Usuario no encontrado.', 404);
     if (!activo && u.rol === 'ADMINISTRADOR' && u.activo) {
-      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo).length;
+      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo && x.username !== 'admin').length;
       if (adminsActivos <= 1) {
         return this.err('No se puede desactivar al último Administrador activo.', 409);
       }

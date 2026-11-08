@@ -1,7 +1,7 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
-import { EstadoPedido, Pedido } from '../../core/models';
+import { EstadoPedido, Pedido, ResumenPedidos } from '../../core/models';
 
 const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Rechazado', 'Cancelado'];
 
@@ -12,10 +12,14 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
   template: `
     <div class="resumen-header">
       <h1>Resumen por estado</h1>
-      <p class="subtitle">{{ pedidos().length }} pedidos registrados</p>
+      <p class="subtitle">{{ resumen().total }} pedidos registrados</p>
     </div>
 
-    <!-- Tarjetas de conteo por estado (RF-16) -->
+    @if (error()) {
+      <div class="error" style="margin-bottom: 16px;" role="alert">{{ error() }}</div>
+    }
+
+    <!-- Tarjetas de conteo por estado (Sprint 3: GET /api/pedidos/resumen) -->
     <div class="kpi-grid">
       @for (est of estados; track est) {
         <button type="button" class="kpi-card" (click)="irAEstado(est)">
@@ -48,7 +52,7 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
       </div>
     </section>
 
-    <!-- Lista de pendientes por atender -->
+    <!-- Lista de pendientes por atender (Sprint 3: GET /api/pedidos?estado=Pendiente) -->
     <section class="table-wrap pending-card">
       <div class="pending-header">
         <strong>Pendientes por atender</strong>
@@ -220,24 +224,38 @@ export class ResumenComponent implements OnInit {
   private router = inject(Router);
 
   readonly estados = ESTADOS;
-  pedidos = signal<Pedido[]>([]);
 
-  readonly pendientes = computed(() => {
-    return this.pedidos()
-      .filter(p => p.estado === 'Pendiente')
-      .slice(0, 5);
+  resumen = signal<ResumenPedidos>({
+    total: 0,
+    porEstado: {
+      Pendiente: 0,
+      Confirmado: 0,
+      Despachado: 0,
+      Rechazado: 0,
+      Cancelado: 0,
+    },
   });
 
+  pendientes = signal<Pedido[]>([]);
+  error = signal('');
+
   ngOnInit() {
-    this.api.listarPedidos().subscribe(lista => this.pedidos.set(lista));
+    this.api.obtenerResumen().subscribe({
+      error: e => this.error.set(e?.error?.mensaje ?? 'No fue posible cargar el resumen por estado.'),
+      next: r => this.resumen.set(r),
+    });
+
+    this.api.listarPedidos('Pendiente').subscribe({
+      next: lista => this.pendientes.set(lista.slice(0, 5)),
+    });
   }
 
   contar(est: EstadoPedido): number {
-    return this.pedidos().filter(p => p.estado === est).length;
+    return this.resumen().porEstado[est] ?? 0;
   }
 
   porcentaje(est: EstadoPedido): number {
-    const total = this.pedidos().length;
+    const total = this.resumen().total;
     if (total === 0) return 0;
     return Math.round((this.contar(est) / total) * 100);
   }

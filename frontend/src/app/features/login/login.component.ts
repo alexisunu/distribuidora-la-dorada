@@ -48,7 +48,7 @@ import { AuthService } from '../../core/auth/auth.service';
                 [(ngModel)]="username"
                 [class.input-error]="!!error()"
                 autocomplete="username"
-                placeholder="ej. mrojas, lgomez, msalazar"
+                placeholder="ej. admin, bodega1, lgomez"
                 required
               >
             </div>
@@ -78,11 +78,11 @@ import { AuthService } from '../../core/auth/auth.service';
             </div>
 
             <div class="demo-box">
-              <span class="demo-label">Accesos rápidos de prueba (clave 1234):</span>
+              <span class="demo-label">Accesos rápidos Sprint 3 (clave 1234):</span>
               <div class="demo-chips">
-                <button type="button" class="demo-chip" (click)="usarDemo('mrojas')">mrojas (Admin)</button>
+                <button type="button" class="demo-chip" (click)="usarDemo('admin')">admin (Admin)</button>
+                <button type="button" class="demo-chip" (click)="usarDemo('bodega1')">bodega1 (Bodega)</button>
                 <button type="button" class="demo-chip" (click)="usarDemo('lgomez')">lgomez (Ventas)</button>
-                <button type="button" class="demo-chip" (click)="usarDemo('msalazar')">msalazar (Bodega)</button>
                 <button type="button" class="demo-chip inactive" (click)="usarDemo('jperez')">jperez (Inactivo)</button>
               </div>
             </div>

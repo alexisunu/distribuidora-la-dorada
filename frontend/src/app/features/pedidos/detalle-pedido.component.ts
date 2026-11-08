@@ -3,31 +3,40 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/auth/auth.service';
-import { MOTIVOS, Pedido } from '../../core/models';
+import {
+  LineaPedido,
+  MOTIVOS_CANCELACION,
+  MOTIVOS_RECHAZO,
+  Pedido,
+} from '../../core/models';
 
 @Component({
   selector: 'app-detalle-pedido',
   standalone: true,
   imports: [FormsModule, RouterLink],
   template: `
-    @if (pedido(); as p) {
-      <div class="detail-header">
-        <a routerLink="/pedidos" class="back-link">‹ Pedidos</a>
+    <div class="detail-header">
+      <a [routerLink]="rutaVolver()" class="back-link">‹ {{ textoVolver() }}</a>
+      @if (pedido(); as p) {
         <h1>Pedido #{{ p.id }}</h1>
         <span class="badge" [class]="p.estado">{{ p.estado }}</span>
+      } @else {
+        <h1>Detalle del pedido</h1>
+      }
+    </div>
+
+    @if (error()) {
+      <div class="error" style="margin-bottom: 16px;" role="alert">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>{{ error() }}</span>
       </div>
+    }
 
-      @if (error()) {
-        <div class="error" style="margin-bottom: 16px;" role="alert">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>{{ error() }}</span>
-        </div>
-      }
+    @if (mensajeOk()) {
+      <div class="toast-ok" style="margin-bottom: 16px;">{{ mensajeOk() }}</div>
+    }
 
-      @if (mensajeOk()) {
-        <div class="toast-ok" style="margin-bottom: 16px;">{{ mensajeOk() }}</div>
-      }
-
+    @if (pedido(); as p) {
       <div class="detail-grid">
         <!-- Columna principal -->
         <div class="detail-main">
@@ -50,112 +59,249 @@ import { MOTIVOS, Pedido } from '../../core/models';
             </div>
             <div>
               <small class="meta-label">Total</small>
-              <strong class="meta-total">$ {{ formatearPrecio(p.total) }}</strong>
+              <strong class="meta-total">$ {{ formatearPrecio(editandoLineas() ? totalEditando() : p.total) }}</strong>
             </div>
           </section>
 
-          <!-- Ítems del pedido (Escritorio) -->
-          <div class="table-wrap only-desktop" style="margin-top: 16px;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Precio</th>
-                  <th>Cant.</th>
-                  <th style="text-align: right;">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (l of p.lineas; track l.idProducto) {
-                  <tr>
-                    <td><strong>{{ l.nombre }}</strong></td>
-                    <td>$ {{ formatearPrecio(l.precioUnitario) }}</td>
-                    <td>{{ l.cantidad }}</td>
-                    <td style="text-align: right;"><strong>$ {{ formatearPrecio(l.subtotal) }}</strong></td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Ítems del pedido (Móvil) -->
-          <div class="mobile-lines only-mobile" style="margin-top: 16px;">
-            <h2 style="font-size: 14px; margin-bottom: 8px;">Productos</h2>
-            @for (l of p.lineas; track l.idProducto) {
-              <div class="mobile-line-card">
-                <span>{{ l.cantidad }} × {{ l.nombre }}</span>
-                <strong>$ {{ formatearPrecio(l.subtotal) }}</strong>
-              </div>
+          <!-- Cabecera de sección de productos con botón "Editar productos" (Ajuste 1) -->
+          <div class="products-header">
+            <h2 style="margin: 0; font-size: 16px;">Productos del pedido</h2>
+            @if (p.estado === 'Pendiente' && puedeGestionarVentas() && !editandoLineas()) {
+              <button type="button" class="btn sec sm" (click)="iniciarEdicionProductos()">
+                Editar productos
+              </button>
             }
           </div>
 
-          <!-- Panel de acciones según estado y rol (RF-07, RF-09, RF-18) -->
-          @if (p.estado === 'Pendiente' && puedeGestionarVentas()) {
-            <section class="actions-box">
-              <div class="motivo-field">
-                <label for="sel-motivo">Motivo (obligatorio al rechazar o cancelar)</label>
-                <select
-                  id="sel-motivo"
-                  name="motivo"
-                  [(ngModel)]="motivoSeleccionado"
-                  [class.input-error]="faltaMotivo()"
-                >
-                  <option value="">Elegir motivo</option>
-                  @for (m of motivos; track m) {
-                    <option [value]="m">{{ m }}</option>
+          @if (!editandoLineas()) {
+            <!-- MODO LECTURA: Ítems del pedido (Escritorio) -->
+            <div class="table-wrap only-desktop">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Precio</th>
+                    <th>Cant.</th>
+                    <th style="text-align: right;">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (l of p.lineas; track l.idProducto) {
+                    <tr>
+                      <td><strong>{{ l.nombre }}</strong></td>
+                      <td>$ {{ formatearPrecio(l.precioUnitario) }}</td>
+                      <td>{{ l.cantidad }}</td>
+                      <td style="text-align: right;"><strong>$ {{ formatearPrecio(l.subtotal) }}</strong></td>
+                    </tr>
                   }
-                </select>
-              </div>
+                </tbody>
+              </table>
+            </div>
 
-              <div class="action-buttons-row">
+            <!-- MODO LECTURA: Ítems del pedido (Móvil) -->
+            <div class="mobile-lines only-mobile">
+              @for (l of p.lineas; track l.idProducto) {
+                <div class="mobile-line-card">
+                  <span>{{ l.cantidad }} × {{ l.nombre }}</span>
+                  <strong>$ {{ formatearPrecio(l.subtotal) }}</strong>
+                </div>
+              }
+            </div>
+          } @else {
+            <!-- MODO EDICIÓN DE PRODUCTOS EN PEDIDO PENDIENTE (Ajuste 1) -->
+            <div class="table-wrap only-desktop">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto y existencias</th>
+                    <th>Precio</th>
+                    <th>Cantidad</th>
+                    <th style="text-align: right;">Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (l of lineasEditables(); track l.idProducto) {
+                    <tr [class.row-amber]="superaExistencias(l.idProducto, l.cantidad)">
+                      <td>
+                        <strong>{{ l.nombre }}</strong>
+                        <div class="stock-info">
+                          Existencias: <strong>{{ stockDe(l.idProducto) }}</strong>
+                          @if (superaExistencias(l.idProducto, l.cantidad)) {
+                            <span class="badge Bajas">Supera stock</span>
+                          }
+                        </div>
+                      </td>
+                      <td>$ {{ formatearPrecio(l.precioUnitario) }}</td>
+                      <td>
+                        <div class="qty-stepper">
+                          <button type="button" class="step-btn" (click)="cambiarCantidad(l.idProducto, l.cantidad - 1)">−</button>
+                          <input
+                            type="number"
+                            min="1"
+                            class="qty-input"
+                            [ngModel]="l.cantidad"
+                            (ngModelChange)="fijarCantidad(l.idProducto, $event)"
+                            aria-label="Cantidad"
+                          >
+                          <button type="button" class="step-btn plus" (click)="cambiarCantidad(l.idProducto, l.cantidad + 1)">+</button>
+                        </div>
+                      </td>
+                      <td style="text-align: right;">
+                        <strong>$ {{ formatearPrecio(l.precioUnitario * l.cantidad) }}</strong>
+                      </td>
+                      <td style="text-align: right;">
+                        <button
+                          type="button"
+                          class="btn danger-outline sm"
+                          [disabled]="lineasEditables().length <= 1"
+                          (click)="quitarLinea(l.idProducto)"
+                          title="Quitar línea del pedido"
+                        >
+                          Quitar
+                        </button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <!-- MODO EDICIÓN (Móvil) -->
+            <div class="mobile-lines only-mobile">
+              @for (l of lineasEditables(); track l.idProducto) {
+                <div class="mobile-edit-card" [class.row-amber]="superaExistencias(l.idProducto, l.cantidad)">
+                  <div class="mobile-edit-top">
+                    <div>
+                      <strong>{{ l.nombre }}</strong>
+                      <div class="stock-info">
+                        $ {{ formatearPrecio(l.precioUnitario) }} · Existencias: {{ stockDe(l.idProducto) }}
+                        @if (superaExistencias(l.idProducto, l.cantidad)) {
+                          <span class="badge Bajas">Supera stock</span>
+                        }
+                      </div>
+                    </div>
+                    <strong>$ {{ formatearPrecio(l.precioUnitario * l.cantidad) }}</strong>
+                  </div>
+                  <div class="mobile-edit-bottom">
+                    <div class="qty-stepper">
+                      <button type="button" class="step-btn" (click)="cambiarCantidad(l.idProducto, l.cantidad - 1)">−</button>
+                      <input
+                        type="number"
+                        min="1"
+                        class="qty-input"
+                        [ngModel]="l.cantidad"
+                        (ngModelChange)="fijarCantidad(l.idProducto, $event)"
+                      >
+                      <button type="button" class="step-btn plus" (click)="cambiarCantidad(l.idProducto, l.cantidad + 1)">+</button>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn danger-outline sm"
+                      [disabled]="lineasEditables().length <= 1"
+                      (click)="quitarLinea(l.idProducto)"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                </div>
+              }
+            </div>
+
+            <div class="edit-actions-bar">
+              <button type="button" class="btn" [disabled]="procesando()" (click)="guardarEdicionProductos()">
+                Guardar cambios
+              </button>
+              <button type="button" class="btn sec" [disabled]="procesando()" (click)="cancelarEdicionProductos()">
+                Cancelar edición
+              </button>
+            </div>
+          }
+
+          <!-- Panel de acciones según estado y rol con motivos separados (Ajuste 3) -->
+          @if (p.estado === 'Pendiente' && puedeGestionarVentas() && !editandoLineas()) {
+            <section class="actions-box">
+              <div class="confirm-primary-row">
                 <button type="button" class="btn" [disabled]="procesando()" (click)="abrirModalConfirmar()">
                   Confirmar pedido
                 </button>
-                <button type="button" class="btn danger-outline" [disabled]="procesando()" (click)="rechazar()">
-                  Rechazar
-                </button>
-                <button type="button" class="btn sec" [disabled]="procesando()" (click)="cancelar()">
-                  Cancelar pedido
-                </button>
+              </div>
+
+              <div class="motivos-split-grid">
+                <!-- Grupo Rechazar: Existencias insuficientes y Otro -->
+                <div class="motivo-group-card">
+                  <label for="sel-motivo-rechazo">Motivo para rechazar</label>
+                  <select
+                    id="sel-motivo-rechazo"
+                    name="motivoRechazo"
+                    [(ngModel)]="motivoRechazo"
+                    [class.input-error]="faltaMotivoRechazo()"
+                  >
+                    <option value="">Elegir motivo de rechazo</option>
+                    @for (m of motivosRechazo; track m) {
+                      <option [value]="m">{{ m }}</option>
+                    }
+                  </select>
+                  <button type="button" class="btn danger-outline" [disabled]="procesando()" (click)="rechazar()">
+                    Rechazar
+                  </button>
+                </div>
+
+                <!-- Grupo Cancelar: El cliente desiste, Sin existencia física y Otro -->
+                <div class="motivo-group-card">
+                  <label for="sel-motivo-cancelar">Motivo para cancelar</label>
+                  <select
+                    id="sel-motivo-cancelar"
+                    name="motivoCancelacion"
+                    [(ngModel)]="motivoCancelacion"
+                    [class.input-error]="faltaMotivoCancelacion()"
+                  >
+                    <option value="">Elegir motivo de cancelación</option>
+                    @for (m of motivosCancelacion; track m) {
+                      <option [value]="m">{{ m }}</option>
+                    }
+                  </select>
+                  <button type="button" class="btn sec" [disabled]="procesando()" (click)="cancelar()">
+                    Cancelar pedido
+                  </button>
+                </div>
               </div>
 
               <p class="caption-note">
-                «Despachar» aparece cuando el pedido está Confirmado (Bodega y Administrador).
+                «Despachar» aparece cuando el pedido está Confirmado (Bodega y Administrador). Si el cliente acepta menos unidades, usa «Editar productos».
               </p>
             </section>
           }
 
           @if (p.estado === 'Confirmado') {
             <section class="actions-box">
-              @if (puedeGestionarVentas()) {
-                <div class="motivo-field">
-                  <label for="sel-motivo-canc">Motivo (obligatorio al cancelar)</label>
-                  <select
-                    id="sel-motivo-canc"
-                    name="motivoCancelacion"
-                    [(ngModel)]="motivoSeleccionado"
-                    [class.input-error]="faltaMotivo()"
-                  >
-                    <option value="">Elegir motivo</option>
-                    @for (m of motivos; track m) {
-                      <option [value]="m">{{ m }}</option>
-                    }
-                  </select>
-                </div>
-              }
-
-              <div class="action-buttons-row">
-                @if (puedeDespachar()) {
+              @if (puedeDespachar()) {
+                <div class="confirm-primary-row">
                   <button type="button" class="btn" [disabled]="procesando()" (click)="despachar()">
                     Despachar pedido
                   </button>
-                }
-                @if (puedeGestionarVentas()) {
+                </div>
+              }
+
+              @if (puedeGestionarVentas()) {
+                <div class="motivo-group-card" style="max-width: 380px;">
+                  <label for="sel-motivo-canc-conf">Motivo para cancelar (devuelve existencias)</label>
+                  <select
+                    id="sel-motivo-canc-conf"
+                    name="motivoCancelacionConf"
+                    [(ngModel)]="motivoCancelacion"
+                    [class.input-error]="faltaMotivoCancelacion()"
+                  >
+                    <option value="">Elegir motivo de cancelación</option>
+                    @for (m of motivosCancelacion; track m) {
+                      <option [value]="m">{{ m }}</option>
+                    }
+                  </select>
                   <button type="button" class="btn sec" [disabled]="procesando()" (click)="cancelar()">
-                    Cancelar pedido (devolver existencias)
+                    Cancelar pedido
                   </button>
-                }
-              </div>
+                </div>
+              }
             </section>
           }
 
@@ -166,11 +312,11 @@ import { MOTIVOS, Pedido } from '../../core/models';
           }
         </div>
 
-        <!-- Columna derecha: Historial de estados (RF-08, RNF-05) -->
+        <!-- Columna derecha: Historial de estados con track $index (Ajuste 4) -->
         <aside class="card history-card">
           <h2>Historial</h2>
           <div class="timeline">
-            @for (h of p.historial; track h.fecha) {
+            @for (h of p.historial; track $index) {
               <div class="timeline-item">
                 <span class="timeline-dot" [class]="h.estadoNuevo"></span>
                 <div class="timeline-content">
@@ -275,20 +421,98 @@ import { MOTIVOS, Pedido } from '../../core/models';
       color: var(--ink);
     }
 
+    .products-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 18px 0 10px;
+      gap: 12px;
+    }
+
+    .stock-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    tr.row-amber td {
+      background: var(--citrico-bg);
+    }
+
+    .mobile-edit-card.row-amber {
+      background: var(--citrico-bg);
+      border-color: var(--citrico-fill);
+    }
+
+    .qty-stepper {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: var(--r-s);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .step-btn {
+      border: none;
+      background: transparent;
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 15px;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+    }
+
+    .step-btn.plus {
+      color: var(--primary);
+    }
+
+    .qty-input {
+      width: 48px;
+      text-align: center;
+      border: none;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-radius: 0;
+      padding: 4px;
+      font-weight: 700;
+      -moz-appearance: textfield;
+    }
+
+    .edit-actions-bar {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
     .actions-box {
       margin-top: 18px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
     }
 
-    .motivo-field {
-      max-width: 340px;
-    }
-
-    .action-buttons-row {
+    .confirm-primary-row {
       display: flex;
-      flex-wrap: wrap;
+    }
+
+    .motivos-split-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .motivo-group-card {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r-m);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
       gap: 10px;
     }
 
@@ -366,7 +590,8 @@ import { MOTIVOS, Pedido } from '../../core/models';
       gap: 8px;
     }
 
-    .mobile-line-card {
+    .mobile-line-card,
+    .mobile-edit-card {
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: var(--r-s);
@@ -377,8 +602,23 @@ import { MOTIVOS, Pedido } from '../../core/models';
       font-size: 14px;
     }
 
+    .mobile-edit-card {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .mobile-edit-top,
+    .mobile-edit-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
     @media (max-width: 768px) {
-      .detail-grid {
+      .detail-grid,
+      .motivos-split-grid {
         grid-template-columns: 1fr;
       }
 
@@ -393,15 +633,23 @@ export class DetallePedidoComponent implements OnInit {
   private auth = inject(AuthService);
   private route = inject(ActivatedRoute);
 
-  readonly motivos = MOTIVOS;
+  readonly motivosRechazo = MOTIVOS_RECHAZO;
+  readonly motivosCancelacion = MOTIVOS_CANCELACION;
 
   pedido = signal<Pedido | null>(null);
-  motivoSeleccionado = '';
-  faltaMotivo = signal(false);
+  motivoRechazo = '';
+  motivoCancelacion = '';
+  faltaMotivoRechazo = signal(false);
+  faltaMotivoCancelacion = signal(false);
   error = signal('');
   mensajeOk = signal('');
   procesando = signal(false);
   modalConfirmarAbierto = signal(false);
+
+  // Modo edición de líneas (Ajuste 1)
+  editandoLineas = signal(false);
+  lineasEditables = signal<LineaPedido[]>([]);
+  stockMapa = signal<Record<number, number>>({});
 
   readonly puedeGestionarVentas = computed(() => {
     const r = this.auth.rol();
@@ -411,6 +659,18 @@ export class DetallePedidoComponent implements OnInit {
   readonly puedeDespachar = computed(() => {
     const r = this.auth.rol();
     return r === 'ADMINISTRADOR' || r === 'BODEGA';
+  });
+
+  readonly rutaVolver = computed(() => {
+    return this.auth.rol() === 'BODEGA' ? '/despachos' : '/pedidos';
+  });
+
+  readonly textoVolver = computed(() => {
+    return this.auth.rol() === 'BODEGA' ? 'Despachos' : 'Pedidos';
+  });
+
+  readonly totalEditando = computed(() => {
+    return this.lineasEditables().reduce((acc, l) => acc + l.precioUnitario * l.cantidad, 0);
   });
 
   ngOnInit() {
@@ -423,9 +683,127 @@ export class DetallePedidoComponent implements OnInit {
     }
   }
 
+  // ==================== EDICIÓN DE PRODUCTOS EN PENDIENTE (PUT /api/pedidos/{id}) ====================
+
+  iniciarEdicionProductos() {
+    const p = this.pedido();
+    if (!p || p.estado !== 'Pendiente') return;
+    this.error.set('');
+    this.lineasEditables.set(structuredClone(p.lineas));
+    this.editandoLineas.set(true);
+
+    this.api.listarProductos().subscribe({
+      next: prods => {
+        const mapa: Record<number, number> = {};
+        for (const pr of prods) {
+          mapa[pr.id] = pr.existencias;
+        }
+        this.stockMapa.set(mapa);
+      },
+    });
+  }
+
+  cancelarEdicionProductos() {
+    this.editandoLineas.set(false);
+    this.error.set('');
+  }
+
+  stockDe(idProducto: number): number {
+    return this.stockMapa()[idProducto] ?? 0;
+  }
+
+  superaExistencias(idProducto: number, cantidad: number): boolean {
+    const disp = this.stockMapa()[idProducto];
+    if (disp === undefined) return false;
+    return cantidad > disp;
+  }
+
+  cambiarCantidad(idProducto: number, nuevaCant: number) {
+    if (nuevaCant <= 0) {
+      if (this.lineasEditables().length <= 1) {
+        this.error.set('El pedido debe conservar al menos un producto.');
+        return;
+      }
+      this.quitarLinea(idProducto);
+      return;
+    }
+    this.error.set('');
+    this.lineasEditables.set(
+      this.lineasEditables().map(l =>
+        l.idProducto === idProducto
+          ? { ...l, cantidad: Math.floor(nuevaCant), subtotal: l.precioUnitario * Math.floor(nuevaCant) }
+          : l
+      )
+    );
+  }
+
+  fijarCantidad(idProducto: number, valor: number) {
+    const num = Number(valor);
+    if (isNaN(num) || num <= 0) {
+      this.error.set('La cantidad debe ser un entero mayor que cero.');
+      return;
+    }
+    this.error.set('');
+    const entero = Math.floor(num);
+    this.lineasEditables.set(
+      this.lineasEditables().map(l =>
+        l.idProducto === idProducto ? { ...l, cantidad: entero, subtotal: l.precioUnitario * entero } : l
+      )
+    );
+  }
+
+  quitarLinea(idProducto: number) {
+    if (this.lineasEditables().length <= 1) {
+      this.error.set('El pedido debe conservar al menos un producto.');
+      return;
+    }
+    this.error.set('');
+    this.lineasEditables.set(this.lineasEditables().filter(l => l.idProducto !== idProducto));
+  }
+
+  guardarEdicionProductos() {
+    const p = this.pedido();
+    if (!p || this.procesando()) return;
+    if (this.lineasEditables().length === 0) {
+      this.error.set('El pedido debe conservar al menos un producto.');
+      return;
+    }
+    for (const l of this.lineasEditables()) {
+      if (!l.cantidad || l.cantidad <= 0) {
+        this.error.set('La cantidad de cada producto debe ser mayor que cero.');
+        return;
+      }
+    }
+
+    this.procesando.set(true);
+    this.error.set('');
+    const payload = {
+      lineas: this.lineasEditables().map(l => ({
+        idProducto: l.idProducto,
+        cantidad: Number(l.cantidad),
+      })),
+    };
+
+    this.api.actualizarPedido(p.id, payload).subscribe({
+      error: e => {
+        this.procesando.set(false);
+        this.error.set(e?.error?.mensaje ?? 'No fue posible actualizar los productos del pedido.');
+      },
+      next: actualizado => {
+        this.procesando.set(false);
+        this.editandoLineas.set(false);
+        this.pedido.set(actualizado);
+        this.mostrarOk('Productos del pedido actualizados correctamente.');
+      },
+    });
+  }
+
+  // ==================== TRANSICIONES DE ESTADO ====================
+
   abrirModalConfirmar() {
     this.error.set('');
-    this.faltaMotivo.set(false);
+    this.faltaMotivoRechazo.set(false);
+    this.faltaMotivoCancelacion.set(false);
     this.modalConfirmarAbierto.set(true);
   }
 
@@ -453,14 +831,15 @@ export class DetallePedidoComponent implements OnInit {
     const p = this.pedido();
     if (!p || this.procesando()) return;
     this.error.set('');
-    if (!this.motivoSeleccionado) {
-      this.faltaMotivo.set(true);
+    this.faltaMotivoCancelacion.set(false);
+    if (!this.motivoRechazo) {
+      this.faltaMotivoRechazo.set(true);
       this.error.set('Debe seleccionar un motivo para rechazar el pedido');
       return;
     }
-    this.faltaMotivo.set(false);
+    this.faltaMotivoRechazo.set(false);
     this.procesando.set(true);
-    this.api.rechazarPedido(p.id, this.motivoSeleccionado).subscribe({
+    this.api.rechazarPedido(p.id, this.motivoRechazo).subscribe({
       error: e => {
         this.procesando.set(false);
         this.error.set(e?.error?.mensaje ?? 'No fue posible rechazar el pedido.');
@@ -477,14 +856,15 @@ export class DetallePedidoComponent implements OnInit {
     const p = this.pedido();
     if (!p || this.procesando()) return;
     this.error.set('');
-    if (!this.motivoSeleccionado) {
-      this.faltaMotivo.set(true);
+    this.faltaMotivoRechazo.set(false);
+    if (!this.motivoCancelacion) {
+      this.faltaMotivoCancelacion.set(true);
       this.error.set('Debe seleccionar un motivo para cancelar el pedido');
       return;
     }
-    this.faltaMotivo.set(false);
+    this.faltaMotivoCancelacion.set(false);
     this.procesando.set(true);
-    this.api.cancelarPedido(p.id, this.motivoSeleccionado).subscribe({
+    this.api.cancelarPedido(p.id, this.motivoCancelacion).subscribe({
       error: e => {
         this.procesando.set(false);
         this.error.set(e?.error?.mensaje ?? 'No fue posible cancelar el pedido.');
