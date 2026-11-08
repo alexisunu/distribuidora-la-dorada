@@ -97,6 +97,10 @@ api PUT "/pedidos/$P4" "$VEND" "{\"lineas\":[{\"idProducto\":$JAB,\"cantidad\":0
 verificar "cantidad 0 -> 400" 400 "$CODIGO"
 api PUT "/pedidos/$P4" "$VEND" "{\"lineas\":[{\"idProducto\":$DET,\"cantidad\":1}]}"
 verificar "producto que no estaba en el pedido -> 400" 400 "$CODIGO"
+api PUT "/pedidos/$P4" "$VEND" "{\"lineas\":[{\"idProducto\":$JAB,\"cantidad\":6}]}"
+verificar "subir la cantidad (5 -> 6) -> 400" 400 "$CODIGO"
+contiene "mensaje" "Solo se pueden reducir cantidades o quitar productos del pedido" "$CUERPO"
+api GET "/pedidos/$P4" "$VEND"; contiene "la cantidad sigue en 5" '"cantidad":5' "$CUERPO"
 api PUT /pedidos/99999 "$VEND" "{\"lineas\":[{\"idProducto\":$JAB,\"cantidad\":1}]}"
 verificar "pedido inexistente -> 404" 404 "$CODIGO"
 api POST "/pedidos/$P4/confirmar" "$VEND"
@@ -175,6 +179,13 @@ api POST "/pedidos/$P2/rechazar" "$VEND" '{"motivo":"Existencias insuficientes"}
 verificar "rechazar con motivo -> 200" 200 "$CODIGO"; contiene "queda Rechazado" '"estado":"Rechazado"' "$CUERPO"
 api POST "/pedidos/$P2/cancelar" "$VEND" '{"motivo":"Otro"}'
 verificar "cancelar un Rechazado -> 409" 409 "$CODIGO"
+api POST /pedidos "$VEND" "{\"cliente\":\"Cancelar un Pendiente\",\"telefonoCliente\":\"3000000004\",\"lineas\":[{\"idProducto\":$BAR,\"cantidad\":1}]}"
+P8=$(id_de "$CUERPO")
+api POST "/pedidos/$P8/cancelar" "$VEND" '{"motivo":"El cliente desiste"}'
+verificar "cancelar un Pendiente -> 409" 409 "$CODIGO"
+contiene "mensaje" "No se puede cancelar un pedido en estado Pendiente" "$CUERPO"
+api GET "/pedidos/$P8" "$VEND"; contiene "el pedido sigue Pendiente" '"estado":"Pendiente"' "$CUERPO"
+api POST "/pedidos/$P8/rechazar" "$VEND" '{"motivo":"Otro"}'
 api POST "/pedidos/$P1/rechazar" "$VEND" '{"motivo":"Otro"}'
 verificar "rechazar un Confirmado -> 409" 409 "$CODIGO"
 

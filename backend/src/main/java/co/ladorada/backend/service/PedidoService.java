@@ -169,10 +169,11 @@ public class PedidoService {
     // --------------------------------------------------------------- editar
 
     /**
-     * Solo desde Pendiente: el vendedor corrige las cantidades (o quita líneas) cuando el cliente acepta menos
-     * unidades. El pedido sigue Pendiente, NO toca las existencias (se descuentan al confirmar) y deja una fila en el
-     * historial. No se agregan productos nuevos ni se cambia el cliente. Cada línea conserva el precio con el que se
-     * creó el pedido; el total se recalcula aquí, nunca viene del cliente.
+     * Solo desde Pendiente: el vendedor reduce las cantidades (o quita líneas) cuando el cliente acepta menos
+     * unidades. Nunca se sube una cantidad: si el cliente quiere más, se crea otro pedido. El pedido sigue Pendiente,
+     * NO toca las existencias (se descuentan al confirmar) y deja una fila en el historial. No se agregan productos
+     * nuevos ni se cambia el cliente. Cada línea conserva el precio con el que se creó el pedido; el total se
+     * recalcula aquí, nunca viene del cliente.
      */
     @Transactional
     public PedidoDto editar(Integer id, EdicionPedidoRequest r, Integer idUsuario) {
@@ -203,7 +204,20 @@ public class PedidoService {
 
         Set<Integer> actuales = p.getDetalles().stream().map(DetallePedido::getIdProducto).collect(Collectors.toSet());
         if (!actuales.containsAll(nuevas.keySet())) {
-            throw new SolicitudInvalidaException("Solo se pueden cambiar cantidades o quitar productos del pedido.");
+            throw new SolicitudInvalidaException("Solo se pueden reducir cantidades o quitar productos del pedido.");
+        }
+
+        List<String> aumentos = new ArrayList<>();                  // reducir sí, subir no: se revisa contra lo guardado
+        for (DetallePedido d : p.getDetalles()) {
+            Integer cantidad = nuevas.get(d.getIdProducto());
+            if (cantidad != null && cantidad > d.getCantidad()) {
+                aumentos.add(d.getProducto().getNombre() + " (en el pedido " + d.getCantidad()
+                        + ", enviaste " + cantidad + ")");
+            }
+        }
+        if (!aumentos.isEmpty()) {
+            throw new SolicitudInvalidaException("Solo se pueden reducir cantidades o quitar productos del pedido: "
+                    + String.join("; ", aumentos) + ".");
         }
 
         boolean hayCambios = nuevas.size() != actuales.size();
@@ -297,25 +311,29 @@ public class PedidoService {
         return PedidoDto.de(p);
     }
 
-    /** Desde Pendiente o Confirmado. Si estaba Confirmado, devuelve las existencias una sola vez (RF-09). */
+    /**
+     * Solo desde Confirmado: devuelve las existencias una sola vez (RF-09). Un Pendiente no se cancela: se rechaza
+     * (nunca descontó inventario) o se edita. El estado se revisa con el pedido ya bloqueado.
+     */
     @Transactional
     public PedidoDto cancelar(Integer id, String motivo, Integer idUsuario) {
         String motivoValido = motivoValido(motivo, "cancelar");
         Usuario responsable = usuarioActivo(idUsuario);
         Pedido p = bloquear(id);
-        EstadoPedido anterior = p.getEstado();
-        if (anterior != EstadoPedido.PENDIENTE && anterior != EstadoPedido.CONFIRMADO) {
-            throw new NegocioException("No se puede cancelar un pedido en estado " + anterior.etiqueta());
+        if (p.getEstado() == EstadoPedido.PENDIENTE) {
+            throw new NegocioException("No se puede cancelar un pedido en estado Pendiente. "
+                    + "Un pedido Pendiente se rechaza o se edita; solo se cancelan los Confirmados.");
         }
-        if (anterior == EstadoPedido.CONFIRMADO) {
-            Map<Integer, Producto> stock = bloquearProductos(p);
-            for (DetallePedido d : p.getDetalles()) {
-                Producto producto = stock.get(d.getIdProducto());
-                producto.setStockActual(producto.getStockActual() + d.getCantidad());
-            }
+        if (p.getEstado() != EstadoPedido.CONFIRMADO) {
+            throw new NegocioException("No se puede cancelar un pedido en estado " + p.getEstado().etiqueta());
+        }
+        Map<Integer, Producto> stock = bloquearProductos(p);
+        for (DetallePedido d : p.getDetalles()) {
+            Producto producto = stock.get(d.getIdProducto());
+            producto.setStockActual(producto.getStockActual() + d.getCantidad());
         }
         p.setEstado(EstadoPedido.CANCELADO);
-        p.agregarHistorial(anterior, EstadoPedido.CANCELADO, motivoValido, responsable);
+        p.agregarHistorial(EstadoPedido.CONFIRMADO, EstadoPedido.CANCELADO, motivoValido, responsable);
         return PedidoDto.de(p);
     }
 
