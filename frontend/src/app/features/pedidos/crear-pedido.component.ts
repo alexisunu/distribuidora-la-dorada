@@ -26,6 +26,16 @@ interface LineaBorrador {
       </div>
     }
 
+    <!-- Aviso no bloqueante cuando alguna cantidad supera las existencias -->
+    @if (hayLineasSobreStock()) {
+      <div class="warn-banner" style="margin-bottom: 16px;" role="status">
+        <span>⚠</span>
+        <span>
+          Uno o más productos superan las existencias disponibles en bodega. Puedes guardar el pedido como Pendiente, pero antes de confirmarlo requerirá ajuste de inventario o edición de cantidades.
+        </span>
+      </div>
+    }
+
     <div class="create-layout">
       <!-- Columna izquierda: Cliente y Productos -->
       <div class="main-col">
@@ -102,10 +112,15 @@ interface LineaBorrador {
               </thead>
               <tbody>
                 @for (item of lineas(); track item.producto.id) {
-                  <tr>
+                  <tr [class.row-amber]="item.cantidad > item.producto.existencias">
                     <td>
                       <strong>{{ item.producto.nombre }}</strong>
-                      <div class="stock-sub">Existencias: {{ item.producto.existencias }}</div>
+                      <div class="stock-sub">
+                        Existencias: {{ item.producto.existencias }}
+                        @if (item.cantidad > item.producto.existencias) {
+                          <span class="badge Bajas" style="margin-left: 6px;">Supera existencias</span>
+                        }
+                      </div>
                     </td>
                     <td>$ {{ formatearPrecio(item.producto.precio) }}</td>
                     <td>
@@ -140,13 +155,18 @@ interface LineaBorrador {
           <!-- Tarjetas de ítems agregados (Móvil) -->
           <div class="mobile-items only-mobile">
             @for (item of lineas(); track item.producto.id) {
-              <div class="mobile-item-card">
+              <div class="mobile-item-card" [class.row-amber]="item.cantidad > item.producto.existencias">
                 <div class="mobile-item-top">
                   <strong>{{ item.producto.nombre }}</strong>
                   <strong>$ {{ formatearPrecio(item.producto.precio * item.cantidad) }}</strong>
                 </div>
                 <div class="mobile-item-bottom">
-                  <span class="stock-sub">$ {{ formatearPrecio(item.producto.precio) }} · Existencias: {{ item.producto.existencias }}</span>
+                  <span class="stock-sub">
+                    $ {{ formatearPrecio(item.producto.precio) }} · Existencias: {{ item.producto.existencias }}
+                    @if (item.cantidad > item.producto.existencias) {
+                      <span class="badge Bajas">Supera stock</span>
+                    }
+                  </span>
                   <div class="qty-stepper">
                     <button type="button" class="step-btn" (click)="cambiarCantidad(item.producto.id, item.cantidad - 1)">−</button>
                     <span class="qty-val">{{ item.cantidad }}</span>
@@ -218,6 +238,28 @@ interface LineaBorrador {
       font-size: 14px;
       font-weight: 600;
       color: var(--primary);
+    }
+
+    .warn-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--citrico-bg);
+      color: var(--citrico);
+      border: 1px solid var(--citrico-fill);
+      padding: 10px 14px;
+      border-radius: var(--r-s);
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    tr.row-amber td {
+      background: var(--citrico-bg);
+    }
+
+    .mobile-item-card.row-amber {
+      background: var(--citrico-bg);
+      border-color: var(--citrico-fill);
     }
 
     .create-layout {
@@ -500,6 +542,10 @@ export class CrearPedidoComponent implements OnInit {
 
   readonly totalPedido = computed(() => {
     return this.lineas().reduce((acc, l) => acc + l.producto.precio * l.cantidad, 0);
+  });
+
+  readonly hayLineasSobreStock = computed(() => {
+    return this.lineas().some(l => l.cantidad > l.producto.existencias);
   });
 
   ngOnInit() {

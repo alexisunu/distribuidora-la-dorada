@@ -1,11 +1,13 @@
 import { Pedido, Producto, Usuario } from './models';
 
 export const USUARIOS: (Usuario & { password: string })[] = [
-  { id: 1, nombre: 'María Rojas', username: 'mrojas', rol: 'ADMINISTRADOR', activo: true, fechaRetiro: null, password: '1234' },
-  { id: 2, nombre: 'Laura Gómez', username: 'lgomez', rol: 'VENDEDOR', activo: true, fechaRetiro: null, password: '1234' },
-  { id: 3, nombre: 'Camilo Ruiz', username: 'cruiz', rol: 'VENDEDOR', activo: true, fechaRetiro: null, password: '1234' },
-  { id: 4, nombre: 'Marta Salazar', username: 'msalazar', rol: 'BODEGA', activo: true, fechaRetiro: null, password: '1234' },
-  { id: 5, nombre: 'Juan Pérez', username: 'jperez', rol: 'VENDEDOR', activo: false, fechaRetiro: '2026-10-15T17:00:00', password: '1234' },
+  { id: 1, nombre: 'María Rojas', username: 'admin', rol: 'ADMINISTRADOR', activo: true, fechaRetiro: null, password: '1234' },
+  { id: 2, nombre: 'María Rojas', username: 'mrojas', rol: 'ADMINISTRADOR', activo: true, fechaRetiro: null, password: '1234' },
+  { id: 3, nombre: 'Laura Gómez', username: 'lgomez', rol: 'VENDEDOR', activo: true, fechaRetiro: null, password: '1234' },
+  { id: 4, nombre: 'Camilo Ruiz', username: 'cruiz', rol: 'VENDEDOR', activo: true, fechaRetiro: null, password: '1234' },
+  { id: 5, nombre: 'Marta Salazar', username: 'bodega1', rol: 'BODEGA', activo: true, fechaRetiro: null, password: '1234' },
+  { id: 6, nombre: 'Marta Salazar', username: 'msalazar', rol: 'BODEGA', activo: true, fechaRetiro: null, password: '1234' },
+  { id: 7, nombre: 'Juan Pérez', username: 'jperez', rol: 'VENDEDOR', activo: false, fechaRetiro: '2026-10-15T17:00:00', password: '1234' },
 ];
 
 // Catálogo oficial: incluye P-001 a P-008 de los mockups y los productos de prueba TC-01 (Detergente 20 uds) y TC-02 (Jabón 8 uds)
@@ -213,10 +215,10 @@ export const PEDIDOS: Pedido[] = [
     telefonoCliente: '311 908 2233',
     estado: 'Pendiente',
     fecha: '2026-10-31T16:40:00',
-    total: 92000,
+    total: 147600,
     vendedor: 'Camilo Ruiz',
     lineas: [
-      { idProducto: 1, codigo: 'P-001', nombre: 'Detergente líquido 1 L', cantidad: 4, precioUnitario: 12500, subtotal: 50000 },
+      { idProducto: 3, codigo: 'P-003', nombre: 'Desinfectante lavanda 1 L', cantidad: 12, precioUnitario: 8200, subtotal: 98400 },
       { idProducto: 8, codigo: 'P-008', nombre: 'Bolsas de basura x10', cantidad: 5, precioUnitario: 5600, subtotal: 28000 },
       { idProducto: 7, codigo: 'P-007', nombre: 'Esponja doble uso', cantidad: 5, precioUnitario: 2800, subtotal: 14000 },
     ],

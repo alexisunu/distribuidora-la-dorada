@@ -10,7 +10,6 @@ import { Rol, Usuario } from '../../core/models';
   template: `
     <div class="page-header">
       <h1>Usuarios</h1>
-      <button type="button" class="btn only-desktop" (click)="iniciarNuevo()">+ Nuevo usuario</button>
     </div>
 
     @if (error()) {
@@ -100,74 +99,70 @@ import { Rol, Usuario } from '../../core/models';
       }
     </div>
 
-    <!-- Formulario de Nuevo / Editar Usuario (Mockup 7) -->
-    @if (mostrarFormulario()) {
-      <section class="card form-panel" id="form-usuario">
-        <h2>{{ editandoId() ? 'Editar usuario' : 'Nuevo usuario' }}</h2>
+    <!-- Formulario Siempre Abierto de Nuevo / Editar Usuario (Ajuste 2) -->
+    <section class="card form-panel" id="form-usuario">
+      <h2>{{ editandoId() ? 'Editar usuario' : 'Nuevo usuario' }}</h2>
 
-        <form (ngSubmit)="guardar()" class="user-form">
-          <div class="form-grid-2">
-            <div>
-              <label for="usr-nombre">Nombre completo</label>
-              <input
-                id="usr-nombre"
-                name="nombre"
-                [(ngModel)]="formNombre"
-                placeholder="Nombre y apellido"
-                required
-              >
-            </div>
-            <div>
-              <label for="usr-login">Nombre de usuario</label>
-              <input
-                id="usr-login"
-                name="username"
-                [(ngModel)]="formUsername"
-                placeholder="ej. mperez"
-                required
-              >
-            </div>
+      <form (ngSubmit)="guardar()" class="user-form">
+        <div class="form-grid-2">
+          <div>
+            <label for="usr-nombre">Nombre completo</label>
+            <input
+              id="usr-nombre"
+              name="nombre"
+              [(ngModel)]="formNombre"
+              placeholder="Nombre y apellido"
+              required
+            >
           </div>
+          <div>
+            <label for="usr-login">Nombre de usuario</label>
+            <input
+              id="usr-login"
+              name="username"
+              [(ngModel)]="formUsername"
+              placeholder="ej. mperez"
+              required
+            >
+          </div>
+        </div>
 
-          <div class="form-grid-2">
-            <div>
-              <label for="usr-rol">Rol</label>
-              <select id="usr-rol" name="rol" [(ngModel)]="formRol">
-                <option value="VENDEDOR">Vendedor</option>
-                <option value="BODEGA">Bodega</option>
-                <option value="ADMINISTRADOR">Administrador</option>
-              </select>
-            </div>
-            <div>
-              <label for="usr-pass">
-                {{ editandoId() ? 'Nueva contraseña (opcional)' : 'Contraseña temporal' }}
-              </label>
-              <input
-                id="usr-pass"
-                name="password"
-                type="password"
-                [(ngModel)]="formPassword"
-                placeholder="Mínimo 8 caracteres"
-                [required]="!editandoId()"
-              >
-            </div>
+        <div class="form-grid-2">
+          <div>
+            <label for="usr-rol">Rol</label>
+            <select id="usr-rol" name="rol" [(ngModel)]="formRol">
+              <option value="VENDEDOR">Vendedor</option>
+              <option value="BODEGA">Bodega</option>
+              <option value="ADMINISTRADOR">Administrador</option>
+            </select>
           </div>
+          <div>
+            <label for="usr-pass">
+              {{ editandoId() ? 'Nueva contraseña (opcional)' : 'Contraseña temporal' }}
+            </label>
+            <input
+              id="usr-pass"
+              name="password"
+              type="password"
+              [(ngModel)]="formPassword"
+              placeholder="Mínimo 8 caracteres"
+              [required]="!editandoId()"
+            >
+          </div>
+        </div>
 
-          <div class="form-actions">
-            <button type="button" class="btn sec" (click)="cancelarFormulario()">Cancelar</button>
-            <button type="submit" class="btn">
-              {{ editandoId() ? 'Guardar cambios' : 'Crear usuario' }}
-            </button>
-          </div>
-        </form>
-      </section>
-    }
+        <div class="form-actions">
+          <button type="button" class="btn sec" (click)="cancelarFormulario()">Cancelar</button>
+          <button type="submit" class="btn">
+            {{ editandoId() ? 'Guardar cambios' : 'Crear usuario' }}
+          </button>
+        </div>
+      </form>
+    </section>
 
     <p class="caption-note">
       No se puede desactivar al último Administrador. Un usuario inactivo no puede iniciar sesión, pero sus pedidos y cambios siguen a su nombre.
     </p>
-
-    <button type="button" class="fab-btn only-mobile" (click)="iniciarNuevo()" title="Nuevo usuario">+</button>
   `,
   styles: [`
     .username-sub {
@@ -187,6 +182,7 @@ import { Rol, Usuario } from '../../core/models';
 
     .form-panel {
       margin-top: 18px;
+      scroll-margin-top: 20px;
     }
 
     .user-form {
@@ -236,22 +232,6 @@ import { Rol, Usuario } from '../../core/models';
       gap: 8px;
     }
 
-    .fab-btn {
-      position: fixed;
-      right: 20px;
-      bottom: 76px;
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: var(--primary);
-      color: var(--on-primary);
-      border: none;
-      font-size: 28px;
-      box-shadow: 0 6px 18px rgba(10, 108, 138, 0.35);
-      cursor: pointer;
-      z-index: 40;
-    }
-
     @media (max-width: 768px) {
       .mobile-users {
         display: flex;
@@ -267,7 +247,6 @@ export class UsuariosComponent implements OnInit {
   private api = inject(ApiService);
 
   usuarios = signal<Usuario[]>([]);
-  mostrarFormulario = signal(true);
   editandoId = signal<number | null>(null);
   error = signal('');
   mensajeOk = signal('');
@@ -299,16 +278,7 @@ export class UsuariosComponent implements OnInit {
     return 'Bodega';
   }
 
-  iniciarNuevo() {
-    this.error.set('');
-    this.editandoId.set(null);
-    this.formNombre = '';
-    this.formUsername = '';
-    this.formRol = 'VENDEDOR';
-    this.formPassword = '';
-    this.mostrarFormulario.set(true);
-  }
-
+  /** Ajuste 2: al pulsar "Editar", la vista baja sola al formulario */
   iniciarEdicion(u: Usuario) {
     this.error.set('');
     this.editandoId.set(u.id);
@@ -316,7 +286,10 @@ export class UsuariosComponent implements OnInit {
     this.formUsername = u.username;
     this.formRol = u.rol;
     this.formPassword = '';
-    this.mostrarFormulario.set(true);
+
+    setTimeout(() => {
+      document.getElementById('form-usuario')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 30);
   }
 
   cancelarFormulario() {

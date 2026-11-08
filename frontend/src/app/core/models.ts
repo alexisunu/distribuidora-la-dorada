@@ -2,9 +2,20 @@ export type Rol = 'ADMINISTRADOR' | 'VENDEDOR' | 'BODEGA';
 export type EstadoPedido = 'Pendiente' | 'Confirmado' | 'Despachado' | 'Rechazado' | 'Cancelado';
 export type TemaModo = 'system' | 'light' | 'dark';
 
+/** Motivos separados por acción (Sprint 3 - Ajustes pre-congelamiento) */
+export const MOTIVOS_RECHAZO = [
+  'Existencias insuficientes',
+  'Otro',
+] as const;
+
+export const MOTIVOS_CANCELACION = [
+  'El cliente desiste',
+  'Sin existencia física',
+  'Otro',
+] as const;
+
 export const MOTIVOS = [
   'Existencias insuficientes',
-  'Error de captura',
   'El cliente desiste',
   'Sin existencia física',
   'Otro',
@@ -64,6 +75,15 @@ export interface NuevoPedido {
   cliente: string;
   telefonoCliente: string;
   lineas: { idProducto: number; cantidad: number }[];
+}
+
+export interface ActualizarPedidoDto {
+  lineas: { idProducto: number; cantidad: number }[];
+}
+
+export interface ResumenPedidos {
+  total: number;
+  porEstado: Record<EstadoPedido, number>;
 }
 
 export interface GuardarProductoDto {
