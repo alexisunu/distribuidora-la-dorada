@@ -1,6 +1,7 @@
 package co.ladorada.backend.service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import co.ladorada.backend.dto.EdicionPedidoRequest;
 import co.ladorada.backend.dto.PedidoDto;
 import co.ladorada.backend.dto.PedidoRequest;
 import co.ladorada.backend.dto.ResumenDto;
@@ -38,6 +40,7 @@ import co.ladorada.backend.repository.UsuarioRepository;
 public class PedidoService {
 
     private static final String MOTIVO_INICIAL = "Registro inicial del pedido";
+    private static final String MOTIVO_EDICION = "Cantidades modificadas a solicitud del cliente";
     private static final String MOTIVO_CONFIRMACION = "Confirmación y descuento de inventario";
     private static final String MOTIVO_DESPACHO = "Despacho del pedido";
     private static final String ROL_BODEGA = "BODEGA";
@@ -163,6 +166,66 @@ public class PedidoService {
         return new ResumenDto(total, porEstado);
     }
 
+    // --------------------------------------------------------------- editar
+
+    /**
+     * Solo desde Pendiente: el vendedor corrige las cantidades (o quita líneas) cuando el cliente acepta menos
+     * unidades. El pedido sigue Pendiente, NO toca las existencias (se descuentan al confirmar) y deja una fila en el
+     * historial. No se agregan productos nuevos ni se cambia el cliente. Cada línea conserva el precio con el que se
+     * creó el pedido; el total se recalcula aquí, nunca viene del cliente.
+     */
+    @Transactional
+    public PedidoDto editar(Integer id, EdicionPedidoRequest r, Integer idUsuario) {
+        if (r == null || r.lineas() == null || r.lineas().isEmpty()) {
+            throw new SolicitudInvalidaException("El pedido debe conservar al menos un producto.");
+        }
+
+        // Validación en servidor (RNF-04), con los mismos mensajes que al crear.
+        Map<Integer, Integer> nuevas = new LinkedHashMap<>();
+        for (PedidoRequest.LineaRequest l : r.lineas()) {
+            if (l == null || l.idProducto() == null) {
+                throw new SolicitudInvalidaException("Cada línea debe indicar el producto.");
+            }
+            if (l.cantidad() == null || l.cantidad() <= 0) {
+                throw new SolicitudInvalidaException("La cantidad de cada producto debe ser un entero mayor que cero.");
+            }
+            if (nuevas.put(l.idProducto(), l.cantidad()) != null) {
+                throw new SolicitudInvalidaException("No se puede repetir un producto en el mismo pedido.");
+            }
+        }
+
+        Usuario responsable = usuarioActivo(idUsuario);
+        Pedido p = bloquear(id);                                    // FOR UPDATE: no se edita mientras se confirma
+        if (p.getEstado() != EstadoPedido.PENDIENTE) {              // el estado se revisa BAJO el bloqueo
+            throw new NegocioException("Solo se puede editar un pedido en estado Pendiente. El pedido está en estado "
+                    + p.getEstado().etiqueta() + ".");
+        }
+
+        Set<Integer> actuales = p.getDetalles().stream().map(DetallePedido::getIdProducto).collect(Collectors.toSet());
+        if (!actuales.containsAll(nuevas.keySet())) {
+            throw new SolicitudInvalidaException("Solo se pueden cambiar cantidades o quitar productos del pedido.");
+        }
+
+        boolean hayCambios = nuevas.size() != actuales.size();
+        for (DetallePedido d : p.getDetalles()) {
+            Integer cantidad = nuevas.get(d.getIdProducto());
+            if (cantidad != null && !cantidad.equals(d.getCantidad())) hayCambios = true;
+        }
+        if (!hayCambios) {                                          // guardar sin cambios no ensucia el historial
+            return PedidoDto.de(p);
+        }
+
+        p.getDetalles().removeIf(d -> !nuevas.containsKey(d.getIdProducto()));   // orphanRemoval borra la fila
+        BigDecimal total = BigDecimal.ZERO;
+        for (DetallePedido d : p.getDetalles()) {
+            d.setCantidad(nuevas.get(d.getIdProducto()));
+            total = total.add(d.getSubtotal());
+        }
+        p.setTotal(total);
+        p.agregarHistorial(EstadoPedido.PENDIENTE, EstadoPedido.PENDIENTE, MOTIVO_EDICION, responsable);
+        return PedidoDto.de(p);
+    }
+
     // ------------------------------------------------------------ confirmar
 
     /**
@@ -178,12 +241,16 @@ public class PedidoService {
         }
         Map<Integer, Producto> stock = bloquearProductos(p);       // (a) FOR UPDATE de los productos
 
-        for (DetallePedido d : p.getDetalles()) {                  // (c) primero se verifica todo...
-            int disponibles = stock.get(d.getIdProducto()).getStockActual();
-            if (disponibles < d.getCantidad()) {                   // (d)
-                throw new NegocioException("No hay existencias suficientes: solicitaste " + d.getCantidad()
-                        + ", disponibles " + disponibles + ".");
+        List<String> faltantes = new ArrayList<>();                // (c) primero se verifica TODO, sin parar en el primero...
+        for (DetallePedido d : p.getDetalles()) {
+            Producto producto = stock.get(d.getIdProducto());
+            if (producto.getStockActual() < d.getCantidad()) {
+                faltantes.add(producto.getNombre() + " (solicitaste " + d.getCantidad()
+                        + ", disponibles " + producto.getStockActual() + ")");
             }
+        }
+        if (!faltantes.isEmpty()) {                                // (d) un solo 409 con todos los productos que no alcanzan
+            throw new NegocioException("No hay existencias suficientes: " + String.join("; ", faltantes) + ".");
         }
         for (DetallePedido d : p.getDetalles()) {                  // (e) ...y luego se descuenta
             Producto producto = stock.get(d.getIdProducto());

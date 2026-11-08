@@ -57,11 +57,12 @@ public class Pedido {
     @Column(name = "estado", nullable = false, length = 15)
     private EstadoPedido estado = EstadoPedido.PENDIENTE;
 
-    /** Redundancia controlada: la calcula solo el backend al crear y no cambia después. */
+    /** Redundancia controlada: la calcula solo el backend, al crear y al editar un pedido Pendiente. */
     @Column(name = "total", nullable = false)
     private BigDecimal total;
 
-    @OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL)
+    /** orphanRemoval: al editar un pedido Pendiente, quitar una línea de la lista borra su fila de detalle_pedido. */
+    @OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL, orphanRemoval = true)
     @BatchSize(size = 50)
     private List<DetallePedido> detalles = new ArrayList<>();
 
