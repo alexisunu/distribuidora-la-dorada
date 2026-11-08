@@ -9,12 +9,14 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import co.ladorada.backend.dto.EdicionPedidoRequest;
 import co.ladorada.backend.dto.MotivoRequest;
 import co.ladorada.backend.dto.PedidoDto;
 import co.ladorada.backend.dto.PedidoRequest;
@@ -56,6 +58,14 @@ public class PedidoController {
     @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
     public PedidoDto crear(@RequestBody PedidoRequest r, @AuthenticationPrincipal Jwt jwt) {
         return service.crear(r, idUsuario(jwt));
+    }
+
+    /** Solo pedidos Pendientes: cambia cantidades o quita líneas. Bodega no edita. */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public PedidoDto editar(@PathVariable Integer id, @RequestBody EdicionPedidoRequest r,
+                            @AuthenticationPrincipal Jwt jwt) {
+        return service.editar(id, r, idUsuario(jwt));
     }
 
     @PostMapping("/{id}/confirmar")
