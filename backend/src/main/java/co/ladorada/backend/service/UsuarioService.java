@@ -1,5 +1,6 @@
 package co.ladorada.backend.service;
 
+import java.time.temporal.ChronoUnit;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -130,7 +131,7 @@ public class UsuarioService {
                 throw new NegocioException("No se puede desactivar al último Administrador activo.");
             }
             u.setEstado(INACTIVO);
-            u.setFechaRetiro(LocalDateTime.now());
+            u.setFechaRetiro(LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
         }
         return UsuarioDto.de(u);
     }
