@@ -66,6 +66,9 @@ import { Producto } from '../../core/models';
               <td class="code-cell">{{ p.codigo }}</td>
               <td>
                 <strong>{{ p.nombre }}</strong>
+                @if (p.descripcion) {
+                  <div class="prod-desc-sub">{{ p.descripcion }}</div>
+                }
               </td>
               <td>$ {{ formatearPrecio(p.precio) }}</td>
               <td>
@@ -154,7 +157,7 @@ import { Producto } from '../../core/models';
       <button type="button" class="fab-btn only-mobile" (click)="abrirNuevo()" title="Nuevo producto">+</button>
     }
 
-    <!-- Modal Crear / Editar Producto (Exclusivo Administrador) -->
+    <!-- Modal Crear / Editar Producto (Sprint 5) -->
     @if (modalProductoAbierto()) {
       <div class="modal-backdrop" (click)="cerrarModales()">
         <div class="modal-card" (click)="$event.stopPropagation()">
@@ -168,24 +171,67 @@ import { Producto } from '../../core/models';
             <div class="form-grid-2">
               <div>
                 <label for="prod-codigo">Código / Referencia</label>
-                <input id="prod-codigo" name="codigo" [(ngModel)]="formCodigo" placeholder="ej. P-009" required>
+                <input
+                  id="prod-codigo"
+                  name="codigo"
+                  [(ngModel)]="formCodigo"
+                  [class.input-error]="errorCampoCodigo()"
+                  placeholder="ej. P-009"
+                  required
+                >
               </div>
               <div>
                 <label for="prod-precio">Precio unitario (COP)</label>
-                <input id="prod-precio" name="precio" type="number" min="1" [(ngModel)]="formPrecio" required>
+                <input
+                  id="prod-precio"
+                  name="precio"
+                  type="number"
+                  [(ngModel)]="formPrecio"
+                  [class.input-error]="errorCampoPrecio()"
+                  required
+                >
               </div>
             </div>
 
             <div>
               <label for="prod-nombre">Nombre del producto</label>
-              <input id="prod-nombre" name="nombre" [(ngModel)]="formNombre" placeholder="ej. Jabón multiusos 1 L" required>
+              <input
+                id="prod-nombre"
+                name="nombre"
+                [(ngModel)]="formNombre"
+                [class.input-error]="errorCampoNombre()"
+                placeholder="ej. Jabón multiusos 1 L"
+                required
+              >
+            </div>
+
+            <!-- Campo Descripción (Sprint 5) -->
+            <div>
+              <label for="prod-desc">Descripción (opcional)</label>
+              <textarea
+                id="prod-desc"
+                name="descripcion"
+                rows="2"
+                [(ngModel)]="formDescripcion"
+                placeholder="Detalles del producto, uso o presentación"
+              ></textarea>
             </div>
 
             <div class="form-grid-2">
-              <div>
-                <label for="prod-stock">Existencias iniciales / actuales</label>
-                <input id="prod-stock" name="existencias" type="number" min="0" [(ngModel)]="formExistencias" required>
-              </div>
+              <!-- Solo visible al CREAR (al editar, el stock se cambia con Ajustar existencias) -->
+              @if (!editandoId()) {
+                <div>
+                  <label for="prod-stock">Existencias iniciales</label>
+                  <input
+                    id="prod-stock"
+                    name="existencias"
+                    type="number"
+                    [(ngModel)]="formExistencias"
+                    [class.input-error]="errorCampoExistencias()"
+                    required
+                  >
+                </div>
+              }
               <div>
                 <label for="prod-min">Umbral de existencias bajas</label>
                 <input id="prod-min" name="stockMinimo" type="number" min="0" [(ngModel)]="formStockMinimo">
@@ -201,7 +247,7 @@ import { Producto } from '../../core/models';
       </div>
     }
 
-    <!-- Modal Ajustar Existencias (Bodega y Administrador) -->
+    <!-- Modal Ajustar Existencias (Bodega y Administrador - con validación resaltada) -->
     @if (productoAjustando()) {
       <div class="modal-backdrop" (click)="cerrarModales()">
         <div class="modal-card" (click)="$event.stopPropagation()">
@@ -224,6 +270,7 @@ import { Producto } from '../../core/models';
                 type="number"
                 step="1"
                 [(ngModel)]="formAjusteCantidad"
+                [class.input-error]="errorCampoAjuste()"
                 required
               >
             </div>
@@ -266,6 +313,12 @@ import { Producto } from '../../core/models';
       color: var(--muted);
       font-weight: 600;
       font-size: 13px;
+    }
+
+    .prod-desc-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
     }
 
     .stock-cell {
@@ -414,10 +467,17 @@ export class ProductosComponent implements OnInit {
 
   formCodigo = '';
   formNombre = '';
+  formDescripcion = '';
   formPrecio = 0;
   formExistencias = 0;
   formStockMinimo = 10;
   formAjusteCantidad = 0;
+
+  errorCampoCodigo = signal(false);
+  errorCampoNombre = signal(false);
+  errorCampoPrecio = signal(false);
+  errorCampoExistencias = signal(false);
+  errorCampoAjuste = signal(false);
 
   readonly esAdmin = computed(() => this.auth.rol() === 'ADMINISTRADOR');
   readonly puedeAjustar = computed(() => this.auth.rol() === 'ADMINISTRADOR' || this.auth.rol() === 'BODEGA');
@@ -454,11 +514,12 @@ export class ProductosComponent implements OnInit {
   }
 
   abrirNuevo() {
-    this.errorModal.set('');
+    this.limpiarErrores();
     this.editandoId.set(null);
     const sigNum = this.productos().length + 1;
     this.formCodigo = `P-${String(sigNum).padStart(3, '0')}`;
     this.formNombre = '';
+    this.formDescripcion = '';
     this.formPrecio = 10000;
     this.formExistencias = 20;
     this.formStockMinimo = 10;
@@ -466,10 +527,11 @@ export class ProductosComponent implements OnInit {
   }
 
   abrirEditar(p: Producto) {
-    this.errorModal.set('');
+    this.limpiarErrores();
     this.editandoId.set(p.id);
     this.formCodigo = p.codigo;
     this.formNombre = p.nombre;
+    this.formDescripcion = p.descripcion ?? '';
     this.formPrecio = p.precio;
     this.formExistencias = p.existencias;
     this.formStockMinimo = p.stockMinimo ?? 10;
@@ -477,7 +539,7 @@ export class ProductosComponent implements OnInit {
   }
 
   abrirAjustar(p: Producto) {
-    this.errorModal.set('');
+    this.limpiarErrores();
     this.productoAjustando.set(p);
     this.formAjusteCantidad = p.existencias;
   }
@@ -485,22 +547,62 @@ export class ProductosComponent implements OnInit {
   cerrarModales() {
     this.modalProductoAbierto.set(false);
     this.productoAjustando.set(null);
+    this.limpiarErrores();
+  }
+
+  limpiarErrores() {
     this.errorModal.set('');
+    this.errorCampoCodigo.set(false);
+    this.errorCampoNombre.set(false);
+    this.errorCampoPrecio.set(false);
+    this.errorCampoExistencias.set(false);
+    this.errorCampoAjuste.set(false);
   }
 
   guardarProducto() {
-    this.errorModal.set('');
-    const dto = {
-      codigo: this.formCodigo,
-      nombre: this.formNombre,
-      precio: Number(this.formPrecio),
-      existencias: Number(this.formExistencias),
-      stockMinimo: Number(this.formStockMinimo),
-    };
+    this.limpiarErrores();
+
+    const codigo = this.formCodigo.trim();
+    const nombre = this.formNombre.trim();
+    const precio = Number(this.formPrecio);
+    const existencias = Number(this.formExistencias);
     const id = this.editandoId();
+
+    if (!codigo) {
+      this.errorCampoCodigo.set(true);
+      this.errorModal.set('El código del producto es obligatorio.');
+      return;
+    }
+    if (!nombre) {
+      this.errorCampoNombre.set(true);
+      this.errorModal.set('El nombre del producto es obligatorio.');
+      return;
+    }
+    if (isNaN(precio) || precio <= 0) {
+      this.errorCampoPrecio.set(true);
+      this.errorModal.set('El precio unitario debe ser un valor numérico válido mayor que cero');
+      return;
+    }
+    if (!id && (isNaN(existencias) || existencias < 0 || !Number.isInteger(existencias))) {
+      this.errorCampoExistencias.set(true);
+      this.errorModal.set('Las existencias no pueden ser negativas');
+      return;
+    }
+
+    const dto = {
+      codigo,
+      nombre,
+      descripcion: this.formDescripcion.trim(),
+      precio,
+      existencias: !id ? existencias : this.formExistencias,
+      stockMinimo: Number(this.formStockMinimo) || 0,
+    };
+
     const obs = id ? this.api.editarProducto(id, dto) : this.api.crearProducto(dto);
     obs.subscribe({
-      error: e => this.errorModal.set(e?.error?.mensaje ?? 'Error al guardar el producto.'),
+      error: e => {
+        this.errorModal.set(e?.error?.mensaje ?? 'Error al guardar el producto.');
+      },
       next: prod => {
         this.cerrarModales();
         this.cargar();
@@ -512,9 +614,19 @@ export class ProductosComponent implements OnInit {
   confirmarAjuste() {
     const p = this.productoAjustando();
     if (!p) return;
-    this.errorModal.set('');
-    this.api.ajustarExistencias(p.id, Number(this.formAjusteCantidad)).subscribe({
-      error: e => this.errorModal.set(e?.error?.mensaje ?? 'Las existencias no pueden ser negativas'),
+    this.limpiarErrores();
+    const cant = Number(this.formAjusteCantidad);
+    if (isNaN(cant) || cant < 0 || !Number.isInteger(cant)) {
+      this.errorCampoAjuste.set(true);
+      this.errorModal.set('Las existencias no pueden ser negativas');
+      return;
+    }
+
+    this.api.ajustarExistencias(p.id, cant).subscribe({
+      error: e => {
+        this.errorCampoAjuste.set(true);
+        this.errorModal.set(e?.error?.mensaje ?? 'Las existencias no pueden ser negativas');
+      },
       next: actualizado => {
         this.cerrarModales();
         this.cargar();

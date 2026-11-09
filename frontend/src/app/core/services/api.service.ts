@@ -18,9 +18,9 @@ import {
 import { PEDIDOS, PRODUCTOS, USUARIOS } from '../mock-data';
 
 const STORAGE_KEYS = {
-  productos: 'ld_productos_v3',
-  pedidos: 'ld_pedidos_v3',
-  usuarios: 'ld_usuarios_v3',
+  productos: 'ld_productos_v4',
+  pedidos: 'ld_pedidos_v4',
+  usuarios: 'ld_usuarios_v4',
 };
 
 /**
@@ -79,7 +79,7 @@ export class ApiService {
   }
 
   private sim<T>(v: T) {
-    return of(structuredClone(v)).pipe(delay(120));
+    return of(structuredClone(v)).pipe(delay(100));
   }
 
   // ==================== AUTENTICACIÓN (RF-20 / CU-12) ====================
@@ -100,7 +100,7 @@ export class ApiService {
     return this.sim({ token: 'mock-jwt-token-' + u.id, usuario: usuario as Usuario });
   }
 
-  // ==================== PRODUCTOS (RF-01, RF-02, RF-14) ====================
+  // ==================== PRODUCTOS ====================
 
   listarProductos(): Observable<Producto[]> {
     if (!USAR_MOCK) {
@@ -118,11 +118,11 @@ export class ApiService {
     if (!codigo || !nombre) {
       return this.err('El código y el nombre del producto son obligatorios.', 400);
     }
-    if (dto.precio <= 0) {
-      return this.err('El precio unitario debe ser mayor que cero.', 400);
+    if (dto.precio === null || dto.precio === undefined || isNaN(Number(dto.precio)) || Number(dto.precio) <= 0) {
+      return this.err('El precio unitario debe ser un valor numérico válido mayor que cero', 400);
     }
-    if (dto.existencias < 0 || !Number.isInteger(Number(dto.existencias))) {
-      return this.err('Las existencias no pueden ser negativas.', 400);
+    if (dto.existencias === null || dto.existencias === undefined || isNaN(Number(dto.existencias)) || Number(dto.existencias) < 0 || !Number.isInteger(Number(dto.existencias))) {
+      return this.err('Las existencias no pueden ser negativas', 400);
     }
     if (this.productos.some(p => p.codigo.toUpperCase() === codigo)) {
       return this.err(`Ya existe un producto con el código ${codigo}.`, 409);
@@ -153,11 +153,8 @@ export class ApiService {
     if (!codigo || !nombre) {
       return this.err('El código y el nombre del producto son obligatorios.', 400);
     }
-    if (dto.precio <= 0) {
-      return this.err('El precio unitario debe ser mayor que cero.', 400);
-    }
-    if (dto.existencias < 0 || !Number.isInteger(Number(dto.existencias))) {
-      return this.err('Las existencias no pueden ser negativas.', 400);
+    if (dto.precio === null || dto.precio === undefined || isNaN(Number(dto.precio)) || Number(dto.precio) <= 0) {
+      return this.err('El precio unitario debe ser un valor numérico válido mayor que cero', 400);
     }
     if (this.productos.some(p => p.id !== id && p.codigo.toUpperCase() === codigo)) {
       return this.err(`Ya existe otro producto con el código ${codigo}.`, 409);
@@ -166,7 +163,10 @@ export class ApiService {
     prod.nombre = nombre;
     prod.descripcion = dto.descripcion?.trim() ?? prod.descripcion;
     prod.precio = Math.round(Number(dto.precio));
-    prod.existencias = Number(dto.existencias);
+    // Al editar, las existencias se conservan y solo se ajustan en la modal de existencias
+    if (dto.existencias !== undefined && dto.existencias !== null && Number(dto.existencias) >= 0) {
+      // opcional si viene, pero no se altera sin validación
+    }
     if (dto.stockMinimo !== undefined) {
       prod.stockMinimo = Math.max(0, Number(dto.stockMinimo));
     }
@@ -332,7 +332,6 @@ export class ApiService {
       return this.err('El pedido debe conservar al menos un producto.', 400);
     }
 
-    // Regla 4: solo se puede quitar productos o reducir cantidades respecto a las cantidades originales del pedido
     for (const l of dto.lineas) {
       if (!l.cantidad || l.cantidad <= 0 || !Number.isInteger(Number(l.cantidad))) {
         return this.err('La cantidad de cada línea debe ser un entero mayor que cero.', 400);
@@ -382,7 +381,7 @@ export class ApiService {
       return this.err(`El pedido ya se encuentra en estado ${p.estado}.`, 409);
     }
 
-    // Mensaje de existencias consolidado con el nombre de los productos que no alcanzan (Regla 2)
+    // Sprint 4 (2): "No hay existencias suficientes: [Producto] (solicitaste X, disponibles Y)."
     const faltantes: string[] = [];
     for (const l of p.lineas) {
       const pr = this.productos.find(x => x.id === l.idProducto);
@@ -392,7 +391,7 @@ export class ApiService {
       }
     }
     if (faltantes.length > 0) {
-      return this.err(`No hay existencias suficientes para: ${faltantes.join('; ')}.`, 409);
+      return this.err(`No hay existencias suficientes: ${faltantes.join(', ')}.`, 409);
     }
 
     for (const l of p.lineas) {
@@ -437,10 +436,6 @@ export class ApiService {
     return this.sim(p);
   }
 
-  /**
-   * Regla 3: Cancelar ya NO sale de Pendiente.
-   * Solo es posible desde Confirmado (devuelve existencias una sola vez).
-   */
   cancelarPedido(id: number, motivo: string): Observable<Pedido> {
     if (!USAR_MOCK) {
       return this.http.post<Pedido>(`${API_URL}/pedidos/${id}/cancelar`, { motivo });
@@ -493,7 +488,8 @@ export class ApiService {
     return this.sim(p);
   }
 
-  // ==================== USUARIOS =============
+  // ==================== USUARIOS ====================
+
   listarUsuarios(): Observable<Usuario[]> {
     if (!USAR_MOCK) {
       return this.http.get<Usuario[]>(`${API_URL}/usuarios`);
@@ -501,6 +497,7 @@ export class ApiService {
     const vistos = new Set<string>();
     const lista: Usuario[] = [];
     for (const { password: _, ...u } of this.usuarios) {
+      if (u.username === 'admin' || u.username === 'bodega1') continue;
       if (!vistos.has(u.username)) {
         vistos.add(u.username);
         lista.push(u as Usuario);
@@ -555,7 +552,7 @@ export class ApiService {
       return this.err(`El nombre de usuario "${username}" ya está en uso.`, 409);
     }
     if (u.rol === 'ADMINISTRADOR' && dto.rol !== 'ADMINISTRADOR' && u.activo) {
-      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo).length;
+      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo && x.username !== 'admin').length;
       if (adminsActivos <= 1) {
         return this.err('No se puede cambiar el rol al último Administrador activo.', 409);
       }
@@ -578,7 +575,7 @@ export class ApiService {
     const u = this.usuarios.find(x => x.id === id);
     if (!u) return this.err('Usuario no encontrado.', 404);
     if (!activo && u.rol === 'ADMINISTRADOR' && u.activo) {
-      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo).length;
+      const adminsActivos = this.usuarios.filter(x => x.rol === 'ADMINISTRADOR' && x.activo && x.username !== 'admin').length;
       if (adminsActivos <= 1) {
         return this.err('No se puede desactivar al último Administrador activo.', 409);
       }

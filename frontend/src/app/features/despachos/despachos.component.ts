@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { Subject, catchError, interval, of, startWith, switchMap, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { Pedido } from '../../core/models';
 
@@ -177,9 +178,10 @@ import { Pedido } from '../../core/models';
     }
   `],
 })
-export class DespachosComponent implements OnInit {
+export class DespachosComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private router = inject(Router);
+  private destroy$ = new Subject<void>();
 
   colaConfirmados = signal<Pedido[]>([]);
   despachandoId = signal<number | null>(null);
@@ -187,15 +189,34 @@ export class DespachosComponent implements OnInit {
   error = signal('');
 
   ngOnInit() {
-    this.cargar();
+    this.iniciarPolling();
   }
 
-  cargar() {
-    this.error.set('');
-    this.api.listarDespachos().subscribe({
-      error: e => this.error.set(e?.error?.mensaje ?? 'No fue posible cargar la cola de despachos.'),
-      next: lista => this.colaConfirmados.set(lista),
-    });
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  /** Polling en tiempo real cada 5s a GET /api/despachos */
+  iniciarPolling() {
+    interval(5000)
+      .pipe(
+        startWith(0),
+        switchMap(() =>
+          this.api.listarDespachos().pipe(
+            catchError(e => {
+              // Si falla puntualmente (por ejemplo token o red), no rompemos el intervalo ni emitimos alertas masivas
+              return of(null);
+            })
+          )
+        ),
+        takeUntil(this.destroy$)
+      )
+      .subscribe(lista => {
+        if (lista) {
+          this.colaConfirmados.set(lista);
+        }
+      });
   }
 
   abrirDetalle(id: number) {
@@ -212,7 +233,7 @@ export class DespachosComponent implements OnInit {
       },
       next: actualizado => {
         this.despachandoId.set(null);
-        this.cargar();
+        this.colaConfirmados.set(this.colaConfirmados().filter(item => item.id !== actualizado.id));
         this.mensajeOk.set(`Pedido #${actualizado.id} (${actualizado.cliente}) marcado como ${actualizado.estado}.`);
         setTimeout(() => this.mensajeOk.set(''), 3500);
       },

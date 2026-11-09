@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { Subject, catchError, interval, of, startWith, switchMap, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { EstadoPedido, Pedido, ResumenPedidos } from '../../core/models';
 
@@ -19,7 +20,7 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
       <div class="error" style="margin-bottom: 16px;" role="alert">{{ error() }}</div>
     }
 
-    <!-- Tarjetas de conteo por estado (Sprint 3: GET /api/pedidos/resumen) -->
+    <!-- Tarjetas de conteo por estado -->
     <div class="kpi-grid">
       @for (est of estados; track est) {
         <button type="button" class="kpi-card" (click)="irAEstado(est)">
@@ -52,7 +53,7 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
       </div>
     </section>
 
-    <!-- Lista de pendientes por atender (Sprint 3: GET /api/pedidos?estado=Pendiente) -->
+    <!-- Lista de pendientes por atender -->
     <section class="table-wrap pending-card">
       <div class="pending-header">
         <strong>Pendientes por atender</strong>
@@ -65,7 +66,11 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
             <span class="pending-date">{{ formatearFecha(p.fecha) }}</span>
           </a>
         } @empty {
-          <div class="empty-pending">No hay pedidos pendientes por atender en este momento.</div>
+          <div class="empty-state" style="padding: 24px;">
+            <div class="empty-state-icon">✓</div>
+            <strong class="empty-state-title">Todo al día</strong>
+            <span class="empty-state-desc">No hay pedidos pendientes por atender en este momento.</span>
+          </div>
         }
       </div>
     </section>
@@ -201,13 +206,6 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
       font-size: 13px;
     }
 
-    .empty-pending {
-      padding: 20px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 13.5px;
-    }
-
     @media (max-width: 768px) {
       .kpi-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -219,9 +217,10 @@ const ESTADOS: EstadoPedido[] = ['Pendiente', 'Confirmado', 'Despachado', 'Recha
     }
   `],
 })
-export class ResumenComponent implements OnInit {
+export class ResumenComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private router = inject(Router);
+  private destroy$ = new Subject<void>();
 
   readonly estados = ESTADOS;
 
@@ -240,14 +239,30 @@ export class ResumenComponent implements OnInit {
   error = signal('');
 
   ngOnInit() {
-    this.api.obtenerResumen().subscribe({
-      error: e => this.error.set(e?.error?.mensaje ?? 'No fue posible cargar el resumen por estado.'),
-      next: r => this.resumen.set(r),
-    });
+    interval(5000)
+      .pipe(
+        startWith(0),
+        switchMap(() => this.api.obtenerResumen().pipe(catchError(() => of(null)))),
+        takeUntil(this.destroy$)
+      )
+      .subscribe(r => {
+        if (r) this.resumen.set(r);
+      });
 
-    this.api.listarPedidos('Pendiente').subscribe({
-      next: lista => this.pendientes.set(lista.slice(0, 5)),
-    });
+    interval(5000)
+      .pipe(
+        startWith(0),
+        switchMap(() => this.api.listarPedidos('Pendiente').pipe(catchError(() => of(null)))),
+        takeUntil(this.destroy$)
+      )
+      .subscribe(lista => {
+        if (lista) this.pendientes.set(lista.slice(0, 5));
+      });
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   contar(est: EstadoPedido): number {

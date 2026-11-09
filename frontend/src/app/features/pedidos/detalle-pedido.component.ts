@@ -8,7 +8,16 @@ import {
   MOTIVOS_CANCELACION,
   MOTIVOS_RECHAZO,
   Pedido,
+  Producto,
 } from '../../core/models';
+
+interface FaltanteStock {
+  idProducto: number;
+  nombre: string;
+  solicitadas: number;
+  disponibles: number;
+  faltan: number;
+}
 
 @Component({
   selector: 'app-detalle-pedido',
@@ -108,10 +117,10 @@ import {
               }
             </div>
           } @else {
-            <!-- MODO EDICIÓN: Solo reducir cantidades o quitar productos (Regla 4) -->
+            <!-- MODO EDICIÓN: Solo reducir cantidades o quitar productos -->
             <div class="edit-rules-banner">
               <span>ℹ</span>
-              <span>Edición de cantidades: solo se permite reducir unidades o quitar productos (máximo las unidades originales del pedido).</span>
+              <span>Edición de cantidades: solo se permite reducir unidades o quitar productos (máximo las unidades originales).</span>
             </div>
 
             <div class="table-wrap only-desktop">
@@ -240,7 +249,7 @@ import {
             </div>
           }
 
-          <!-- Panel de acciones según estado y rol: Regla 3 (Cancelar NO sale de Pendiente) -->
+          <!-- Panel de acciones de pedido Pendiente con panel de existencias al lado del rechazo (Sprint 5) -->
           @if (p.estado === 'Pendiente' && puedeGestionarVentas() && !editandoLineas()) {
             <section class="actions-box">
               <div class="pending-actions-row">
@@ -249,29 +258,58 @@ import {
                 </button>
               </div>
 
-              <div class="motivo-group-card" style="max-width: 420px;">
-                <label for="sel-motivo-rechazo">Motivo para rechazar</label>
-                <div class="action-inline-form">
-                  <select
-                    id="sel-motivo-rechazo"
-                    name="motivoRechazo"
-                    [(ngModel)]="motivoRechazo"
-                    [class.input-error]="faltaMotivoRechazo()"
-                  >
-                    <option value="">Elegir motivo de rechazo</option>
-                    @for (m of motivosRechazo; track m) {
-                      <option [value]="m">{{ m }}</option>
+              <!-- Sprint 5 (3): Sección Rechazar junto al Panel de Productos que superan existencias -->
+              <div class="pending-panels-grid">
+                <!-- Tarjeta Rechazo -->
+                <div class="motivo-group-card">
+                  <label for="sel-motivo-rechazo">Motivo para rechazar</label>
+                  <div class="action-inline-form">
+                    <select
+                      id="sel-motivo-rechazo"
+                      name="motivoRechazo"
+                      [(ngModel)]="motivoRechazo"
+                      [class.input-error]="faltaMotivoRechazo()"
+                    >
+                      <option value="">Elegir motivo de rechazo</option>
+                      @for (m of motivosRechazo; track m) {
+                        <option [value]="m">{{ m }}</option>
+                      }
+                    </select>
+                    <button type="button" class="btn danger-outline" [disabled]="procesando()" (click)="rechazar()">
+                      Rechazar
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Panel de disponibilidad de existencias (Sprint 5) -->
+                <div class="stock-check-panel" [class.all-ok]="faltantesStock().length === 0">
+                  <div class="stock-check-header">
+                    <strong>Disponibilidad en bodega</strong>
+                    @if (faltantesStock().length > 0) {
+                      <span class="badge Bajas">{{ faltantesStock().length }} faltante(s)</span>
+                    } @else {
+                      <span class="badge Confirmado">Stock completo</span>
                     }
-                  </select>
-                  <button type="button" class="btn danger-outline" [disabled]="procesando()" (click)="rechazar()">
-                    Rechazar
-                  </button>
+                  </div>
+
+                  @if (faltantesStock().length > 0) {
+                    <div class="stock-check-list">
+                      @for (f of faltantesStock(); track f.idProducto) {
+                        <div class="stock-check-row">
+                          <span class="sc-name">{{ f.nombre }}</span>
+                          <span class="sc-details">
+                            Solicitadas: <strong>{{ f.solicitadas }}</strong> | Disponibles: <strong>{{ f.disponibles }}</strong> | <span class="sc-missing">Faltan: {{ f.faltan }}</span>
+                          </span>
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <div class="stock-check-ok">
+                      Todos los productos tienen existencias suficientes.
+                    </div>
+                  }
                 </div>
               </div>
-
-              <p class="caption-note">
-                «Cancelar» solo está disponible en pedidos Confirmados. Si el cliente desiste o no hay existencias, usa «Rechazar» o ajusta cantidades con «Editar productos».
-              </p>
             </section>
           }
 
@@ -523,6 +561,12 @@ import {
       gap: 10px;
     }
 
+    .pending-panels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
     .motivo-group-card {
       background: var(--bg);
       border: 1px solid var(--line);
@@ -531,6 +575,67 @@ import {
       display: flex;
       flex-direction: column;
       gap: 8px;
+    }
+
+    /* Panel de existencias en Detalle Pendiente (Sprint 5) */
+    .stock-check-panel {
+      background: var(--surface);
+      border: 1px solid var(--citrico-fill);
+      border-radius: var(--r-m);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stock-check-panel.all-ok {
+      border-color: var(--menta-fill);
+      background: var(--menta-bg);
+    }
+
+    .stock-check-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+
+    .stock-check-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stock-check-row {
+      display: flex;
+      flex-direction: column;
+      font-size: 12.5px;
+      padding: 6px 8px;
+      background: var(--citrico-bg);
+      border-radius: var(--r-s);
+      gap: 2px;
+    }
+
+    .sc-name {
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .sc-details {
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+
+    .sc-missing {
+      color: var(--fram);
+      font-weight: 700;
+    }
+
+    .stock-check-ok {
+      color: var(--menta);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 0;
     }
 
     .history-card {
@@ -634,7 +739,8 @@ import {
     }
 
     @media (max-width: 768px) {
-      .detail-grid {
+      .detail-grid,
+      .pending-panels-grid {
         grid-template-columns: 1fr;
       }
 
@@ -657,6 +763,9 @@ export class DetallePedidoComponent implements OnInit {
   readonly motivosCancelacion = MOTIVOS_CANCELACION;
 
   pedido = signal<Pedido | null>(null);
+  catalogoProductos = signal<Producto[]>([]);
+  stockMapa = signal<Record<number, number>>({});
+
   motivoRechazo = '';
   motivoCancelacion = '';
   faltaMotivoRechazo = signal(false);
@@ -666,10 +775,9 @@ export class DetallePedidoComponent implements OnInit {
   procesando = signal(false);
   modalConfirmarAbierto = signal(false);
 
-  // Modo edición de líneas (Regla 4: solo reducir o quitar)
+  // Modo edición de líneas (solo reducir o quitar)
   editandoLineas = signal(false);
   lineasEditables = signal<LineaPedido[]>([]);
-  stockMapa = signal<Record<number, number>>({});
   cantidadesOriginales = signal<Record<number, number>>({});
 
   readonly puedeGestionarVentas = computed(() => {
@@ -694,7 +802,31 @@ export class DetallePedidoComponent implements OnInit {
     return this.lineasEditables().reduce((acc, l) => acc + l.precioUnitario * l.cantidad, 0);
   });
 
+  /** Sprint 5 (3): Panel de productos que superan existencias, actualizado en vivo */
+  readonly faltantesStock = computed<FaltanteStock[]>(() => {
+    const p = this.pedido();
+    if (!p) return [];
+    const lineas = this.editandoLineas() ? this.lineasEditables() : p.lineas;
+    const mapa = this.stockMapa();
+    const resultado: FaltanteStock[] = [];
+
+    for (const l of lineas) {
+      const disp = mapa[l.idProducto];
+      if (disp !== undefined && l.cantidad > disp) {
+        resultado.push({
+          idProducto: l.idProducto,
+          nombre: l.nombre,
+          solicitadas: l.cantidad,
+          disponibles: disp,
+          faltan: l.cantidad - disp,
+        });
+      }
+    }
+    return resultado;
+  });
+
   ngOnInit() {
+    this.cargarCatalogo();
     const id = Number(this.route.snapshot.paramMap.get('id'));
     if (id) {
       this.api.obtenerPedido(id).subscribe({
@@ -704,23 +836,10 @@ export class DetallePedidoComponent implements OnInit {
     }
   }
 
-  // ==================== EDICIÓN DE PRODUCTOS EN PENDIENTE =============
-  iniciarEdicionProductos() {
-    const p = this.pedido();
-    if (!p || p.estado !== 'Pendiente') return;
-    this.error.set('');
-    this.lineasEditables.set(structuredClone(p.lineas));
-
-    // Guardamos las cantidades originales para bloquear aumentos (Regla 4)
-    const mapaMax: Record<number, number> = {};
-    for (const l of p.lineas) {
-      mapaMax[l.idProducto] = l.cantidad;
-    }
-    this.cantidadesOriginales.set(mapaMax);
-    this.editandoLineas.set(true);
-
+  cargarCatalogo() {
     this.api.listarProductos().subscribe({
       next: prods => {
+        this.catalogoProductos.set(prods);
         const mapa: Record<number, number> = {};
         for (const pr of prods) {
           mapa[pr.id] = pr.existencias;
@@ -728,6 +847,23 @@ export class DetallePedidoComponent implements OnInit {
         this.stockMapa.set(mapa);
       },
     });
+  }
+
+  // ==================== EDICIÓN DE PRODUCTOS EN PENDIENTE ====================
+
+  iniciarEdicionProductos() {
+    const p = this.pedido();
+    if (!p || p.estado !== 'Pendiente') return;
+    this.error.set('');
+    this.lineasEditables.set(structuredClone(p.lineas));
+
+    const mapaMax: Record<number, number> = {};
+    for (const l of p.lineas) {
+      mapaMax[l.idProducto] = l.cantidad;
+    }
+    this.cantidadesOriginales.set(mapaMax);
+    this.editandoLineas.set(true);
+    this.cargarCatalogo();
   }
 
   cancelarEdicionProductos() {
@@ -869,6 +1005,7 @@ export class DetallePedidoComponent implements OnInit {
         this.modalConfirmarAbierto.set(false);
         this.pedido.set(actualizado);
         this.mostrarOk('Pedido confirmado y existencias descontadas.');
+        this.cargarCatalogo();
       },
     });
   }
@@ -919,6 +1056,7 @@ export class DetallePedidoComponent implements OnInit {
         this.procesando.set(false);
         this.pedido.set(actualizado);
         this.mostrarOk('Pedido cancelado correctamente.');
+        this.cargarCatalogo();
       },
     });
   }
