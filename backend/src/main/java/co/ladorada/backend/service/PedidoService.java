@@ -297,10 +297,12 @@ public class PedidoService {
 
     // ------------------------------------------------- rechazar y cancelar
 
-    /** Solo desde Pendiente. No toca el inventario porque nunca se descontó. */
+    /**
+     * Solo desde Pendiente. No toca el inventario porque nunca se descontó. Motivos: Existencias insuficientes u Otro.
+     */
     @Transactional
     public PedidoDto rechazar(Integer id, String motivo, Integer idUsuario) {
-        String motivoValido = motivoValido(motivo, "rechazar");
+        String motivoValido = motivoValido(motivo, true);
         Usuario responsable = usuarioActivo(idUsuario);
         Pedido p = bloquear(id);
         if (p.getEstado() != EstadoPedido.PENDIENTE) {
@@ -313,11 +315,12 @@ public class PedidoService {
 
     /**
      * Solo desde Confirmado: devuelve las existencias una sola vez (RF-09). Un Pendiente no se cancela: se rechaza
-     * (nunca descontó inventario) o se edita. El estado se revisa con el pedido ya bloqueado.
+     * (nunca descontó inventario) o se edita. El estado se revisa con el pedido ya bloqueado. Motivos: El cliente
+     * desiste, Sin existencia física u Otro.
      */
     @Transactional
     public PedidoDto cancelar(Integer id, String motivo, Integer idUsuario) {
-        String motivoValido = motivoValido(motivo, "cancelar");
+        String motivoValido = motivoValido(motivo, false);
         Usuario responsable = usuarioActivo(idUsuario);
         Pedido p = bloquear(id);
         if (p.getEstado() == EstadoPedido.PENDIENTE) {
@@ -350,13 +353,23 @@ public class PedidoService {
         return productos.bloquearPorIds(ids).stream().collect(Collectors.toMap(Producto::getId, Function.identity()));
     }
 
-    private String motivoValido(String motivo, String verbo) {
+    /**
+     * Valida el motivo según la acción: el rechazo y la cancelación tienen listas distintas. Todo es 400 y va antes
+     * de mirar el estado del pedido. Devuelve la etiqueta oficial del motivo, que es la que queda en el historial.
+     */
+    private String motivoValido(String motivo, boolean rechazar) {
+        String verbo = rechazar ? "rechazar" : "cancelar";
         if (motivo == null || motivo.isBlank()) {
             throw new SolicitudInvalidaException("Debe seleccionar un motivo para " + verbo + " el pedido");
         }
         MotivoPedido m = MotivoPedido.desde(motivo);
         if (m == null) {
             throw new SolicitudInvalidaException("El motivo no es válido.");
+        }
+        boolean sirve = rechazar ? m.sirveParaRechazar() : m.sirveParaCancelar();
+        if (!sirve) {
+            throw new SolicitudInvalidaException("El motivo «" + m.etiqueta() + "» no es válido para " + verbo
+                    + " un pedido. Motivos permitidos: " + MotivoPedido.permitidosPara(rechazar) + ".");
         }
         return m.etiqueta();
     }

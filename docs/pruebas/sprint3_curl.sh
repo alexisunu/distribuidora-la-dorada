@@ -96,7 +96,7 @@ api GET "/pedidos/$PP" "$VEND"; contiene "el Pendiente sigue Pendiente" '"estado
 api POST "/pedidos/$PA/despachar" "$BOD"
 verificar "ya Despachado -> 409" 409 "$CODIGO"
 pedido_nuevo "Rechazado"; PR=$PEDIDO
-api POST "/pedidos/$PR/rechazar" "$VEND" '{"motivo":"Error de captura"}'
+api POST "/pedidos/$PR/rechazar" "$VEND" '{"motivo":"Otro"}'
 api POST "/pedidos/$PR/despachar" "$BOD"; verificar "Rechazado -> 409" 409 "$CODIGO"
 pedido_confirmado "Cancelado"; PX=$PEDIDO
 api POST "/pedidos/$PX/cancelar" "$VEND" '{"motivo":"El cliente desiste"}'

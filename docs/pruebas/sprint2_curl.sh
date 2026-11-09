@@ -175,6 +175,15 @@ verificar "rechazar sin motivo -> 400" 400 "$CODIGO"
 contiene "mensaje" "Debe seleccionar un motivo para rechazar el pedido" "$CUERPO"
 api POST "/pedidos/$P2/rechazar" "$VEND" '{"motivo":"Otra cosa inventada"}'
 verificar "motivo fuera de la lista -> 400" 400 "$CODIGO"
+api POST "/pedidos/$P2/rechazar" "$VEND" '{"motivo":"El cliente desiste"}'
+verificar "rechazar con un motivo de cancelación -> 400" 400 "$CODIGO"
+contiene "mensaje" "no es válido para rechazar un pedido. Motivos permitidos: Existencias insuficientes, Otro." "$CUERPO"
+api POST "/pedidos/$P2/rechazar" "$VEND" '{"motivo":"Sin existencia física"}'
+verificar "rechazar con \"Sin existencia física\" -> 400" 400 "$CODIGO"
+api POST "/pedidos/$P2/rechazar" "$VEND" '{"motivo":"Error de captura"}'
+verificar "rechazar con \"Error de captura\" (ya no existe) -> 400" 400 "$CODIGO"
+contiene "mensaje" "El motivo no es válido." "$CUERPO"
+api GET "/pedidos/$P2" "$VEND"; contiene "el pedido sigue Pendiente" '"estado":"Pendiente"' "$CUERPO"
 api POST "/pedidos/$P2/rechazar" "$VEND" '{"motivo":"Existencias insuficientes"}'
 verificar "rechazar con motivo -> 200" 200 "$CODIGO"; contiene "queda Rechazado" '"estado":"Rechazado"' "$CUERPO"
 api POST "/pedidos/$P2/cancelar" "$VEND" '{"motivo":"Otro"}'
@@ -188,6 +197,17 @@ api GET "/pedidos/$P8" "$VEND"; contiene "el pedido sigue Pendiente" '"estado":"
 api POST "/pedidos/$P8/rechazar" "$VEND" '{"motivo":"Otro"}'
 api POST "/pedidos/$P1/rechazar" "$VEND" '{"motivo":"Otro"}'
 verificar "rechazar un Confirmado -> 409" 409 "$CODIGO"
+
+echo "== Cancelar: motivos válidos solo de la lista de cancelación =="
+STOCK_P1=$(stock_de REF-001)
+api POST "/pedidos/$P1/cancelar" "$VEND" '{"motivo":"Existencias insuficientes"}'
+verificar "cancelar con un motivo de rechazo -> 400" 400 "$CODIGO"
+contiene "mensaje" "no es válido para cancelar un pedido. Motivos permitidos: El cliente desiste, Sin existencia física, Otro." "$CUERPO"
+api POST "/pedidos/$P1/cancelar" "$VEND" '{"motivo":"Error de captura"}'
+verificar "cancelar con \"Error de captura\" (ya no existe) -> 400" 400 "$CODIGO"
+contiene "mensaje" "El motivo no es válido." "$CUERPO"
+api GET "/pedidos/$P1" "$VEND"; contiene "el pedido sigue Confirmado" '"estado":"Confirmado"' "$CUERPO"
+verificar "las existencias no cambian" "$STOCK_P1" "$(stock_de REF-001)"
 
 echo "== Roles y token =="
 api POST "/pedidos/$P1/confirmar" "$BOD"; verificar "Bodega no confirma -> 403" 403 "$CODIGO"

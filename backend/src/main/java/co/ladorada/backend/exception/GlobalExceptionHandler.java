@@ -1,5 +1,6 @@
 package co.ladorada.backend.exception;
 
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
@@ -50,10 +51,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiError.of(403, "No tienes permiso para esta acción."));
     }
 
+    /** Cada anotación de los DTO trae su propio mensaje en español, así que se devuelve sin el nombre del campo. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> validacion(MethodArgumentNotValidException e) {
         String msg = e.getBindingResult().getFieldErrors().stream()
-                .map(f -> f.getField() + ": " + f.getDefaultMessage())
+                .map(f -> f.getDefaultMessage())
+                .filter(Objects::nonNull)
+                .distinct()
                 .collect(Collectors.joining("; "));
         return ResponseEntity.badRequest().body(ApiError.of(400, msg));
     }

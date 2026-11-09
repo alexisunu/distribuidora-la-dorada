@@ -9,6 +9,7 @@ import co.ladorada.backend.dto.ProductoDto;
 import co.ladorada.backend.dto.ProductoRequest;
 import co.ladorada.backend.exception.NegocioException;
 import co.ladorada.backend.exception.NoEncontradoException;
+import co.ladorada.backend.exception.SolicitudInvalidaException;
 import co.ladorada.backend.model.Producto;
 import co.ladorada.backend.repository.ProductoRepository;
 
@@ -29,16 +30,22 @@ public class ProductoService {
         return lista.stream().map(ProductoDto::de).toList();
     }
 
+    /** Las existencias iniciales solo se fijan aquí (y después con ajustarExistencias). */
     @Transactional
     public ProductoDto crear(ProductoRequest r) {
+        if (r.existencias() == null) {
+            throw new SolicitudInvalidaException("Las existencias iniciales son obligatorias al crear un producto");
+        }
         if (productos.existsByReferenciaIgnoreCase(r.codigo().trim())) {
             throw new NegocioException("Ya existe un producto con el código " + r.codigo().trim() + ".");
         }
         Producto p = new Producto();
         aplicar(p, r);
+        p.setStockActual(r.existencias().intValueExact());   // @Digits(fraction = 0) ya garantizó que es entero
         return ProductoDto.de(productos.save(p));
     }
 
+    /** Ignora r.existencias(): el stock no se edita aquí, solo cambia con crear y ajustarExistencias. */
     @Transactional
     public ProductoDto editar(Integer id, ProductoRequest r) {
         Producto p = buscar(id);
@@ -65,7 +72,6 @@ public class ProductoService {
         p.setNombre(r.nombre().trim());
         p.setDescripcion(r.descripcion());
         p.setPrecioUnitario(r.precio());
-        p.setStockActual(r.existencias());
         p.setStockMinimo(r.stockMinimo() == null ? 0 : r.stockMinimo());
     }
 }

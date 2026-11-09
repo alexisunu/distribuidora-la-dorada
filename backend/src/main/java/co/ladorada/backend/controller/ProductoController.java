@@ -53,6 +53,6 @@ public class ProductoController {
     @PatchMapping("/{id}/existencias")
     @PreAuthorize("hasAnyRole('BODEGA','ADMINISTRADOR')")
     public ProductoDto ajustarExistencias(@PathVariable Integer id, @Valid @RequestBody ExistenciasRequest r) {
-        return service.ajustarExistencias(id, r.existencias());
+        return service.ajustarExistencias(id, r.existencias().intValueExact());
     }
 }
