@@ -188,8 +188,11 @@ export class ApiService {
     return this.sim(prod);
   }
 
-  // ==================== PEDIDOS, RESUMEN Y DESPACHOS ====================
+  // ==================== PEDIDOS, RESUMEN Y DESPACHOS (SPRINT 3) ====================
 
+  /**
+   * GET /api/pedidos (solo Vendedor y Administrador; acepta ?estado=Pendiente)
+   */
   listarPedidos(estado?: EstadoPedido): Observable<Pedido[]> {
     if (!USAR_MOCK) {
       return estado
@@ -206,6 +209,10 @@ export class ApiService {
     return this.sim(lista);
   }
 
+  /**
+   * Sprint 3 (1): GET /api/despachos
+   * Devuelve solo los pedidos Confirmados, del más antiguo al más reciente.
+   */
   listarDespachos(): Observable<Pedido[]> {
     if (!USAR_MOCK) {
       return this.http.get<Pedido[]>(`${API_URL}/despachos`);
@@ -216,6 +223,10 @@ export class ApiService {
     return this.sim(confirmados);
   }
 
+  /**
+   * Sprint 3 (3): GET /api/pedidos/resumen
+   * Responde {"total": 12, "porEstado": {"Pendiente": 3, "Confirmado": 2, "Despachado": 5, "Rechazado": 1, "Cancelado": 1}}
+   */
   obtenerResumen(): Observable<ResumenPedidos> {
     if (!USAR_MOCK) {
       return this.http.get<ResumenPedidos>(`${API_URL}/pedidos/resumen`);
@@ -236,6 +247,11 @@ export class ApiService {
     });
   }
 
+  /**
+   * Sprint 3 (4): GET /api/pedidos/{id}
+   * Bodega solo puede abrir el detalle de pedidos Confirmados o Despachados;
+   * con cualquier otro estado responde 403 con el mensaje en error.mensaje.
+   */
   obtenerPedido(id: number): Observable<Pedido> {
     if (!USAR_MOCK) {
       return this.http.get<Pedido>(`${API_URL}/pedidos/${id}`);
@@ -477,8 +493,7 @@ export class ApiService {
     return this.sim(p);
   }
 
-  // ==================== USUARIOS ====================
-
+  // ==================== USUARIOS =============
   listarUsuarios(): Observable<Usuario[]> {
     if (!USAR_MOCK) {
       return this.http.get<Usuario[]>(`${API_URL}/usuarios`);

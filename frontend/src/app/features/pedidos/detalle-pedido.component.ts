@@ -704,8 +704,7 @@ export class DetallePedidoComponent implements OnInit {
     }
   }
 
-  // ==================== EDICIÓN DE PRODUCTOS EN PENDIENTE ====================
-
+  // ==================== EDICIÓN DE PRODUCTOS EN PENDIENTE =============
   iniciarEdicionProductos() {
     const p = this.pedido();
     if (!p || p.estado !== 'Pendiente') return;

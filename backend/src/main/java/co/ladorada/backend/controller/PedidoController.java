@@ -1,0 +1,101 @@
+package co.ladorada.backend.controller;
+
+import java.util.List;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import co.ladorada.backend.dto.EdicionPedidoRequest;
+import co.ladorada.backend.dto.MotivoRequest;
+import co.ladorada.backend.dto.PedidoDto;
+import co.ladorada.backend.dto.PedidoRequest;
+import co.ladorada.backend.dto.ResumenDto;
+import co.ladorada.backend.service.PedidoService;
+
+/** Matriz de permisos (documento técnico, Tabla 3). Bodega solo despacha y ve el detalle de Confirmados y Despachados. */
+@RestController
+@RequestMapping("/api/pedidos")
+public class PedidoController {
+
+    private final PedidoService service;
+
+    public PedidoController(PedidoService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public List<PedidoDto> listar(@RequestParam(required = false) String estado) {
+        return service.listar(estado);
+    }
+
+    /** Va antes de "/{id}" a propósito: así se lee que "resumen" es una ruta fija y no un id. */
+    @GetMapping("/resumen")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public ResumenDto resumen() {
+        return service.resumen();
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR','BODEGA')")
+    public PedidoDto obtener(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+        return service.obtener(id, jwt.getClaimAsString("rol"));
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public PedidoDto crear(@RequestBody PedidoRequest r, @AuthenticationPrincipal Jwt jwt) {
+        return service.crear(r, idUsuario(jwt));
+    }
+
+    /** Solo pedidos Pendientes: cambia cantidades o quita líneas. Bodega no edita. */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public PedidoDto editar(@PathVariable Integer id, @RequestBody EdicionPedidoRequest r,
+                            @AuthenticationPrincipal Jwt jwt) {
+        return service.editar(id, r, idUsuario(jwt));
+    }
+
+    @PostMapping("/{id}/confirmar")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public PedidoDto confirmar(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+        return service.confirmar(id, idUsuario(jwt));
+    }
+
+    @PostMapping("/{id}/rechazar")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public PedidoDto rechazar(@PathVariable Integer id, @RequestBody(required = false) MotivoRequest r,
+                              @AuthenticationPrincipal Jwt jwt) {
+        return service.rechazar(id, r == null ? null : r.motivo(), idUsuario(jwt));
+    }
+
+    @PostMapping("/{id}/cancelar")
+    @PreAuthorize("hasAnyRole('VENDEDOR','ADMINISTRADOR')")
+    public PedidoDto cancelar(@PathVariable Integer id, @RequestBody(required = false) MotivoRequest r,
+                              @AuthenticationPrincipal Jwt jwt) {
+        return service.cancelar(id, r == null ? null : r.motivo(), idUsuario(jwt));
+    }
+
+    @PostMapping("/{id}/despachar")
+    @PreAuthorize("hasAnyRole('BODEGA','ADMINISTRADOR')")
+    public PedidoDto despachar(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+        return service.despachar(id, idUsuario(jwt));
+    }
+
+    /** El responsable sale del token firmado (claim "uid"), no de algo que mande el cliente. */
+    private static Integer idUsuario(Jwt jwt) {
+        return ((Number) jwt.getClaim("uid")).intValue();
+    }
+}
