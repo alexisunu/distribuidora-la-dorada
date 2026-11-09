@@ -1,7 +1,7 @@
 -- Consultas SQL de soporte para el Documento Técnico (Apartados 5.3, 5.6 y 5.9)
 
--- 1. RESUMEN DE PEDIDOS POR ESTADO (RF-16)
 
+-- 1. RESUMEN DE PEDIDOS POR ESTADO (RF-16)
 SELECT 
     e.estado,
     COALESCE(COUNT(p.id_pedido), 0) AS total_pedidos,
@@ -19,10 +19,9 @@ ORDER BY
         WHEN 'CANCELADO'  THEN 4
         WHEN 'RECHAZADO'  THEN 5
     END;
-    
 
 -- 2. LISTADO DE PEDIDOS FILTRADO POR ESTADO CON USUARIO RESPONSABLE (RF-08, RF-13, RF-17)
--- Parámetro de filtro: :'estado'::text = 'PENDIENTE', o NULL para listar todos
+-- Usa NULLIF(:'estado'::text, '') para permitir filtro vacío ('') o un estado específico
 SELECT 
     p.id_pedido,
     p.nombre_cliente,
@@ -34,7 +33,7 @@ SELECT
     u.nombre_completo AS nombre_responsable
 FROM pedido p
 INNER JOIN usuario u ON p.id_usuario = u.id_usuario
-WHERE (:'estado'::text IS NULL OR p.estado = :'estado'::text)
+WHERE (NULLIF(:'estado'::text, '') IS NULL OR p.estado = NULLIF(:'estado'::text, ''))
 ORDER BY p.fecha_creacion DESC;
 
 -- 3A. DETALLE DE UN PEDIDO: CABECERA E ÍTEMS CON SUBTOTAL CALCULADO (RF-03, RF-08, RF-12)
@@ -55,11 +54,10 @@ FROM pedido p
 INNER JOIN usuario u ON p.id_usuario = u.id_usuario
 INNER JOIN detalle_pedido dp ON p.id_pedido = dp.id_pedido
 INNER JOIN producto pr ON dp.id_producto = pr.id_producto
-WHERE p.id_pedido = :id_pedido
+WHERE p.id_pedido = :'id_pedido'::int
 ORDER BY dp.id_detalle ASC;
 
 -- 3B. HISTORIAL DE AUDITORÍA Y TRAZABILIDAD DE UN PEDIDO (RF-08, RF-17, RNF-05)
-
 SELECT 
     h.id_historial,
     h.id_pedido,
@@ -72,5 +70,5 @@ SELECT
     COALESCE(h.motivo, 'Sin observación') AS motivo
 FROM historial_estado h
 INNER JOIN usuario u ON h.id_usuario = u.id_usuario
-WHERE h.id_pedido = :id_pedido
+WHERE h.id_pedido = :'id_pedido'::int
 ORDER BY h.fecha_hora ASC, h.id_historial ASC;
